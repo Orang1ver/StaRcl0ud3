@@ -1,0 +1,2076 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>游戏时长统计</title>
+<style>
+  /* ================= design tokens ================= */
+  :root {
+    color-scheme: dark;
+    --bg: #0b0a18;
+    --surface: #16142a;
+    --surface-2: #1d1a33;
+    --surface-3: #241f3d;
+    --line: rgba(167, 139, 250, .14);
+    --line-strong: rgba(167, 139, 250, .34);
+    --text: #ece9f8;
+    --text-2: #c9cfe6;
+    --muted: #9aa4bf;
+    --primary: #7c3aed;
+    --primary-2: #9d5cff;
+    --primary-soft: #a78bfa;
+    --glow-a: rgba(124, 58, 237, .30);
+    --glow-b: rgba(244, 63, 94, .14);
+    --glow-c: rgba(56, 189, 248, .10);
+    --accent: #f43f5e;
+    --accent-soft: #fb7185;
+    --ok: #34d399;
+    --ring: #a78bfa;
+    --r-lg: 18px;
+    --r-md: 14px;
+    --r-sm: 10px;
+    --sh-1: 0 10px 30px rgba(4, 3, 14, .45);
+    --sh-2: 0 24px 64px rgba(4, 3, 14, .6);
+    --t-fast: 140ms;
+    --t: 200ms;
+    --ease: cubic-bezier(.22, .61, .36, 1);
+    --font-ui: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+    --font-num: "Bahnschrift", "Segoe UI Variable Display", "Microsoft YaHei UI", "Segoe UI", sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    min-height: 100vh;
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 15px;
+    line-height: 1.55;
+    background-color: var(--bg);
+    background-image:
+      radial-gradient(1100px 540px at 6% -10%, var(--glow-a), transparent 62%),
+      radial-gradient(900px 480px at 98% 2%, var(--glow-b), transparent 60%),
+      radial-gradient(900px 620px at 50% 118%, var(--glow-c), transparent 66%),
+      linear-gradient(180deg, #0e0c1d 0%, #090812 100%);
+    background-attachment: fixed;
+    padding: 30px 20px 72px;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, .022) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, .022) 1px, transparent 1px);
+    background-size: 46px 46px;
+    -webkit-mask-image: radial-gradient(circle at 50% 0%, #000 0%, transparent 76%);
+    mask-image: radial-gradient(circle at 50% 0%, #000 0%, transparent 76%);
+  }
+  .container { position: relative; z-index: 1; max-width: 1140px; margin: 0 auto; }
+
+  ::selection { background: rgba(167, 139, 250, .35); }
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 8px; }
+
+  * { scrollbar-width: thin; scrollbar-color: rgba(167, 139, 250, .35) transparent; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: rgba(167, 139, 250, .28); border-radius: 8px; border: 3px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(167, 139, 250, .45); background-clip: content-box; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  /* ================= header ================= */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 20px 22px;
+    margin-bottom: 22px;
+    background: linear-gradient(150deg, rgba(124, 58, 237, .16), rgba(22, 20, 42, .72) 55%);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    box-shadow: var(--sh-1);
+    backdrop-filter: blur(8px);
+  }
+  .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+  .brand-mark {
+    width: 46px;
+    height: 46px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    border-radius: 14px;
+    color: #fff;
+    background: linear-gradient(140deg, var(--primary), var(--accent));
+    box-shadow: 0 10px 24px rgba(124, 58, 237, .38);
+  }
+  .brand-mark svg { width: 24px; height: 24px; }
+  h1 {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: .5px;
+    line-height: 1.25;
+  }
+  .subtitle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 12.5px;
+    letter-spacing: .3px;
+  }
+  .subtitle b { color: var(--primary-soft); font-weight: 600; font-family: var(--font-num); letter-spacing: .5px; }
+  .live-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--ok);
+    box-shadow: 0 0 0 3px rgba(52, 211, 153, .16);
+    animation: pulse 2.4s var(--ease) infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(52, 211, 153, .16); }
+    50% { box-shadow: 0 0 0 6px rgba(52, 211, 153, .06); }
+  }
+
+  .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  .ghost-btn, .edit-card-btn, .file-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 38px;
+    padding: 8px 14px;
+    color: var(--text-2);
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1;
+    text-decoration: none;
+    white-space: nowrap;
+    background: rgba(255, 255, 255, .05);
+    border: 1px solid rgba(255, 255, 255, .10);
+    border-radius: var(--r-sm);
+    cursor: pointer;
+    transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+  }
+  .ghost-btn svg, .edit-card-btn svg, .file-btn svg { width: 15px; height: 15px; flex: none; opacity: .85; }
+  .ghost-btn:hover, .edit-card-btn:hover, .file-btn:hover, .cancel-btn:hover {
+    color: #fff;
+    background: rgba(167, 139, 250, .18);
+    border-color: var(--line-strong);
+  }
+  .ghost-btn:active, .edit-card-btn:active, .file-btn:active, .primary-btn:active, .danger-btn:active, .cancel-btn:active, .link-btn:active { transform: scale(.975); }
+  .ghost-btn.danger { color: #ffc9d2; border-color: rgba(244, 63, 94, .30); background: rgba(244, 63, 94, .10); }
+  .ghost-btn.danger:hover { color: #fff; background: rgba(244, 63, 94, .22); border-color: rgba(244, 63, 94, .48); }
+  .file-btn.disabled { opacity: .45; pointer-events: none; }
+
+  .link-btn {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 30px;
+    padding: 4px 10px;
+    color: var(--muted);
+    font-family: inherit;
+    font-size: 12.5px;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+  }
+  .link-btn:hover { color: var(--primary-soft); background: rgba(167, 139, 250, .12); border-color: var(--line); }
+
+  /* ================= stat cards ================= */
+  .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 8px; }
+  .stat-card {
+    position: relative;
+    overflow: hidden;
+    padding: 18px 20px;
+    background: linear-gradient(160deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, .015));
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    box-shadow: var(--sh-1);
+    transition: transform var(--t) var(--ease), border-color var(--t) var(--ease);
+  }
+  .stat-card::after {
+    content: "";
+    position: absolute;
+    right: -40px;
+    top: -50px;
+    width: 130px;
+    height: 130px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--glow, rgba(124, 58, 237, .3)), transparent 70%);
+    pointer-events: none;
+  }
+  .stat-card:hover { transform: translateY(-2px); border-color: var(--line-strong); }
+  .stat-head { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+  .stat-head svg { width: 15px; height: 15px; flex: none; }
+  .stat-value {
+    margin-top: 8px;
+    font-family: var(--font-num);
+    font-size: 30px;
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: .5px;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-value small { margin-left: 5px; color: var(--muted); font-family: var(--font-ui); font-size: 13px; font-weight: 400; letter-spacing: 0; }
+
+  /* ================= section titles ================= */
+  .section-title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 30px 0 12px;
+    color: #dfe3f5;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: .4px;
+  }
+  .section-title::before {
+    content: "";
+    width: 4px;
+    height: 16px;
+    border-radius: 2px;
+    background: linear-gradient(var(--primary-soft), var(--accent));
+  }
+
+  /* ================= session list ================= */
+  .session-list { display: grid; gap: 10px; }
+  .session-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 13px 16px;
+    background: linear-gradient(120deg, rgba(255, 255, 255, .055), rgba(255, 255, 255, .02));
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    transition: border-color var(--t) var(--ease), background var(--t) var(--ease), transform var(--t) var(--ease);
+  }
+  .session-card:hover { border-color: var(--line-strong); background: rgba(167, 139, 250, .09); transform: translateX(2px); }
+  .session-date { color: var(--muted); font-size: 12px; margin-bottom: 3px; }
+  .session-range { font-family: var(--font-num); font-size: 17px; font-weight: 600; letter-spacing: .6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .session-range span { margin: 0 7px; color: var(--muted); font-family: var(--font-ui); font-size: 13px; font-weight: 400; }
+  .session-game { display: flex; align-items: center; gap: 8px; margin-left: 14px; min-width: 0; font-size: 14px; }
+  .session-right { margin-left: auto; text-align: right; white-space: nowrap; }
+  .session-min { color: var(--ok); font-family: var(--font-num); font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .mini-avatar { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; flex: none; background: var(--surface-2); border: 1px solid rgba(255, 255, 255, .12); }
+  .mini-avatar.mini-starrail { object-position: center 12%; }
+  .mini-avatar.mini-zzz { object-position: center 30%; }
+  .mini-avatar.mini-minecraft { object-position: center 22%; }
+
+  /* ================= game grid ================= */
+  .game-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .game-card {
+    position: relative;
+    overflow: hidden;
+    padding: 18px 20px;
+    background: linear-gradient(155deg, rgba(255, 255, 255, .075), rgba(255, 255, 255, .015));
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    transition: transform var(--t) var(--ease), border-color var(--t) var(--ease);
+  }
+  .game-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: linear-gradient(var(--game-color, var(--primary-soft)), transparent);
+    opacity: .9;
+  }
+  .game-card:hover { transform: translateY(-3px); border-color: var(--line-strong); }
+  .game-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .game-avatar {
+    width: 50px;
+    height: 50px;
+    flex: none;
+    border-radius: 50%;
+    object-fit: cover;
+    background: var(--surface-2);
+    border: 2px solid rgba(255, 255, 255, .14);
+    box-shadow: 0 0 20px var(--game-glow, rgba(124, 58, 237, .3));
+  }
+  .game-avatar.avatar-starrail { object-position: center 12%; }
+  .game-avatar.avatar-zzz { object-position: center 30%; }
+  .game-avatar.avatar-minecraft { object-position: center 22%; }
+  .game-badge {
+    width: 50px;
+    height: 50px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    color: #12091f;
+    font-size: 19px;
+    font-weight: 700;
+    box-shadow: 0 0 20px var(--game-glow, rgba(124, 58, 237, .3));
+  }
+  .game-name { font-size: 15px; font-weight: 600; }
+  .game-main { font-family: var(--font-num); font-size: 26px; font-weight: 600; letter-spacing: .5px; font-variant-numeric: tabular-nums; }
+  .game-sub { margin-top: 4px; color: var(--muted); font-size: 12.5px; }
+  .game-share { margin-top: 12px; height: 4px; border-radius: 999px; background: rgba(255, 255, 255, .07); overflow: hidden; }
+  .game-share i { display: block; height: 100%; border-radius: 999px; background: var(--game-color, var(--primary-soft)); }
+
+  /* ================= day list ================= */
+  .day-list { display: grid; gap: 12px; }
+  .day-card {
+    padding: 14px 16px;
+    background: linear-gradient(150deg, rgba(255, 255, 255, .05), rgba(255, 255, 255, .015));
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    transition: border-color var(--t) var(--ease);
+  }
+  .day-card:hover { border-color: var(--line-strong); }
+  .day-card.is-empty { display: flex; align-items: center; padding: 10px 16px; background: rgba(255, 255, 255, .02); }
+  .day-card.is-empty .day-date { margin: 0; }
+  .day-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+  .day-card.is-empty .day-head { width: 100%; margin: 0; }
+  .day-date { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; letter-spacing: .3px; }
+  .day-date span {
+    padding: 1px 8px;
+    color: #0f0a1f;
+    font-size: 11px;
+    font-weight: 700;
+    background: linear-gradient(120deg, var(--primary-soft), var(--accent-soft));
+    border-radius: 999px;
+  }
+  .day-total { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+  .day-total b { color: var(--ok); font-family: var(--font-num); font-size: 15px; font-variant-numeric: tabular-nums; }
+  .day-empty { padding: 10px 0; color: #6f7896; font-size: 13px; text-align: center; }
+  .day-card.is-empty .day-total { color: #6f7896; font-size: 12.5px; }
+
+  .bar-row { display: grid; grid-template-columns: 132px 1fr 76px; align-items: center; gap: 12px; padding: 6px 0; }
+  .bar-row + .bar-row { border-top: 1px solid rgba(255, 255, 255, .05); }
+  .bar-name { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; }
+  .bar-track { height: 8px; border-radius: 999px; background: rgba(255, 255, 255, .07); overflow: hidden; }
+  .bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--game-color, var(--primary-soft)), var(--game-color, var(--primary-soft)));
+    box-shadow: 0 0 12px var(--game-glow, rgba(124, 58, 237, .3));
+  }
+  .bar-min { color: var(--text-2); font-family: var(--font-num); font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* ================= charts ================= */
+  .chart-card {
+    padding: 16px 18px;
+    background: linear-gradient(160deg, rgba(255, 255, 255, .05), rgba(255, 255, 255, .015));
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    box-shadow: var(--sh-1);
+  }
+  .chart-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .chart-title { color: var(--text-2); font-size: 12.5px; letter-spacing: .3px; }
+  .chart-legend { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .chart-legend span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+  .chart-legend i { width: 9px; height: 9px; border-radius: 3px; }
+
+  .trend-body { display: flex; gap: 10px; }
+  .trend-axis { width: 36px; display: flex; flex-direction: column; gap: 6px; height: 200px; color: var(--muted); font-family: var(--font-num); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .trend-axis-spacer { height: 16px; }
+  .trend-axis-scale { flex: 1; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; padding-right: 8px; }
+  .trend-axis-scale span { transform: translateY(-50%); line-height: 1; }
+  .trend-wrap { position: relative; flex: 1; min-width: 0; }
+  .trend-grid { position: absolute; left: 0; right: 0; top: 22px; bottom: 22px; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; }
+  .trend-grid i { display: block; height: 1px; background: rgba(255, 255, 255, .055); }
+  .trend { display: flex; align-items: stretch; gap: 6px; height: 200px; overflow-x: auto; overflow-y: hidden; padding-bottom: 2px; }
+  .trend-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .trend-value { height: 16px; color: #b9c0dc; font-family: var(--font-num); font-size: 11px; line-height: 16px; font-variant-numeric: tabular-nums; }
+  .trend-bar-area { flex: 1; width: 100%; display: flex; align-items: flex-end; justify-content: center; }
+  .trend-bar { width: 60%; max-width: 30px; display: flex; flex-direction: column-reverse; border-radius: 8px 8px 3px 3px; overflow: hidden; background: rgba(255, 255, 255, .05); }
+  .trend-seg { width: 100%; }
+  .trend-label { height: 16px; color: var(--muted); font-family: var(--font-num); font-size: 11px; line-height: 16px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .trend-col.is-today .trend-label { color: var(--primary-soft); font-weight: 600; }
+
+  .heat-summary { margin-top: 14px; color: var(--muted); font-size: 12.5px; }
+  .heat-summary b { color: var(--text-2); font-family: var(--font-num); font-weight: 600; }
+  .heat-wrap { display: flex; gap: 10px; align-items: flex-start; }
+  .heat-weekdays { display: grid; grid-template-rows: 16px repeat(7, 15px); gap: 4px; color: var(--muted); font-size: 10.5px; text-align: right; }
+  .heat-weekdays span { line-height: 15px; }
+  .heat-grid { display: grid; grid-auto-flow: column; grid-template-rows: 16px repeat(7, 15px); gap: 4px; overflow-x: auto; padding-bottom: 2px; }
+  .heat-cell { width: 15px; height: 15px; border-radius: 4px; background: rgba(255, 255, 255, .05); transition: transform var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
+  .heat-cell.empty { background: none; }
+  .heat-cell:not(.empty):hover { transform: scale(1.28); box-shadow: 0 0 0 2px rgba(167, 139, 250, .45); }
+  .heat-month { color: var(--muted); font-size: 10.5px; line-height: 16px; white-space: nowrap; }
+  .heat-legend { display: flex; align-items: center; gap: 6px; }
+  .heat-legend span { width: 15px; height: 15px; border-radius: 4px; }
+  .heat-legend em { margin-left: 8px; color: var(--muted); font-size: 12px; font-style: normal; }
+
+  footer { margin-top: 34px; color: #6f7896; font-size: 12px; line-height: 1.9; text-align: center; }
+
+  /* ================= modals ================= */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(6, 4, 16, .72);
+    backdrop-filter: blur(6px);
+  }
+  .modal-backdrop.hidden { display: none; }
+  .modal {
+    width: min(620px, 100%);
+    max-height: 84vh;
+    overflow: auto;
+    padding: 22px;
+    background: linear-gradient(165deg, var(--surface-2), #100e1e);
+    border: 1px solid var(--line-strong);
+    border-radius: 20px;
+    box-shadow: var(--sh-2);
+    animation: modal-in var(--t) var(--ease);
+  }
+  @keyframes modal-in {
+    from { opacity: 0; transform: translateY(10px) scale(.985); }
+    to { opacity: 1; transform: none; }
+  }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  .modal-head h2 { font-size: 17px; font-weight: 600; letter-spacing: .3px; }
+  .modal-close {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+    font-size: 22px;
+    line-height: 1;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+  }
+  .modal-close:hover { color: #fff; background: rgba(255, 255, 255, .08); }
+  .modal-tip { margin-top: 16px; color: var(--muted); font-size: 12px; line-height: 1.9; }
+
+  /* ================= forms ================= */
+  .form-field { margin-bottom: 14px; }
+  .form-label { display: block; margin-bottom: 6px; color: var(--text-2); font-size: 13px; }
+  .text-input, .text-area {
+    width: 100%;
+    padding: 10px 12px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 14px;
+    background: rgba(255, 255, 255, .05);
+    border: 1px solid rgba(255, 255, 255, .12);
+    border-radius: var(--r-sm);
+    outline: none;
+    transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+  }
+  .text-input:hover, .text-area:hover { border-color: rgba(167, 139, 250, .28); }
+  .text-input:focus, .text-area:focus { border-color: var(--primary-soft); background: rgba(167, 139, 250, .10); }
+  select.text-input { appearance: none; }
+  .text-input option { color: var(--text); background: #14122a; }
+  .form-error { min-height: 16px; margin-top: 8px; color: var(--accent-soft); font-size: 12px; }
+  .form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+  .primary-btn {
+    min-height: 40px;
+    padding: 10px 20px;
+    color: #fff;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    background: linear-gradient(135deg, var(--primary), var(--primary-2));
+    border: none;
+    border-radius: var(--r-sm);
+    cursor: pointer;
+    box-shadow: 0 8px 22px rgba(124, 58, 237, .35);
+    transition: filter var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+  }
+  .primary-btn:hover { filter: brightness(1.1); }
+  .primary-btn:disabled { opacity: .5; cursor: default; box-shadow: none; }
+  .cancel-btn {
+    min-height: 40px;
+    padding: 10px 18px;
+    color: var(--text-2);
+    font-family: inherit;
+    font-size: 14px;
+    background: rgba(255, 255, 255, .06);
+    border: 1px solid rgba(255, 255, 255, .12);
+    border-radius: var(--r-sm);
+    cursor: pointer;
+    transition: background var(--t-fast) var(--ease);
+  }
+  .danger-btn {
+    min-height: 34px;
+    flex: none;
+    padding: 7px 13px;
+    color: #ffc9d2;
+    font-family: inherit;
+    font-size: 12.5px;
+    background: rgba(244, 63, 94, .12);
+    border: 1px solid rgba(244, 63, 94, .32);
+    border-radius: 9px;
+    cursor: pointer;
+    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+  }
+  .danger-btn:hover { color: #fff; background: rgba(244, 63, 94, .26); }
+
+  .avatar-file-row { display: flex; align-items: center; gap: 12px; }
+  .avatar-preview { display: none; width: 52px; height: 52px; border-radius: 50%; object-fit: cover; background: var(--surface-2); border: 2px solid var(--line-strong); }
+  .avatar-preview.show { display: block; }
+  .exe-pick-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+  .exe-hint { color: var(--muted); font-size: 12px; word-break: break-all; }
+
+  /* ================= record / history rows ================= */
+  .record-filters { display: grid; grid-template-columns: 1.2fr 1fr 1fr 1.4fr; gap: 10px; margin-bottom: 12px; }
+  .records-summary { margin-bottom: 10px; color: var(--muted); font-size: 12.5px; }
+  .records-summary b { color: var(--text-2); font-family: var(--font-num); }
+  .record-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 13px;
+    background: rgba(255, 255, 255, .04);
+    border: 1px solid rgba(255, 255, 255, .07);
+    border-radius: var(--r-md);
+    transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+  }
+  .record-row + .record-row { margin-top: 8px; }
+  .record-row:hover { background: rgba(167, 139, 250, .09); border-color: var(--line); }
+  .record-time { min-width: 142px; display: flex; flex-direction: column; }
+  .record-time b { font-family: var(--font-num); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .record-time span { color: var(--muted); font-family: var(--font-num); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .record-game { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13.5px; }
+  .record-min { color: var(--ok); font-family: var(--font-num); font-size: 13.5px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .record-row .row-del { margin-top: 0; }
+
+  .row-del {
+    margin-top: 8px;
+    padding: 5px 11px;
+    color: #ffc9d2;
+    font-family: inherit;
+    font-size: 12px;
+    background: rgba(244, 63, 94, .10);
+    border: 1px solid rgba(244, 63, 94, .28);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+  }
+  .row-del:hover { color: #fff; background: rgba(244, 63, 94, .24); }
+  .row-del:active { transform: scale(.96); }
+  .day-del { margin-top: 0; }
+  #recordsModalBox { width: min(880px, 100%); }
+
+  .history-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 13px;
+    background: rgba(255, 255, 255, .04);
+    border: 1px solid rgba(255, 255, 255, .07);
+    border-radius: var(--r-md);
+  }
+  .history-row + .history-row { margin-top: 8px; }
+  .history-avatar { width: 38px; height: 38px; flex: none; border-radius: 50%; object-fit: cover; background: var(--surface-2); border: 1px solid var(--line-strong); }
+  .history-info { flex: 1; min-width: 0; }
+  .history-name { font-size: 14px; font-weight: 600; }
+  .history-sub { margin-top: 2px; color: var(--muted); font-size: 12px; }
+  .history-right { display: flex; align-items: center; gap: 10px; }
+
+  .config-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .config-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: rgba(255, 255, 255, .04);
+    border: 1px solid rgba(255, 255, 255, .07);
+    border-radius: var(--r-md);
+    transition: border-color var(--t) var(--ease);
+  }
+  .config-card:hover { border-color: var(--line); }
+  .config-avatar { width: 46px; height: 46px; flex: none; border-radius: 50%; object-fit: cover; background: var(--surface-2); border: 2px solid var(--line-strong); }
+  .config-badge { width: 46px; height: 46px; flex: none; display: grid; place-items: center; border-radius: 50%; color: #12091f; font-size: 18px; font-weight: 700; }
+  .config-name { font-size: 15px; font-weight: 600; }
+  .config-proc { margin-top: 3px; color: var(--muted); font-size: 12px; word-break: break-all; }
+  .config-actions { margin-left: auto; display: flex; flex: none; gap: 8px; }
+  .record-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  /* ================= theme variants ================= */
+  body[data-theme="cyan"] {
+    --primary: #0e7490;
+    --primary-2: #22d3ee;
+    --primary-soft: #22d3ee;
+    --glow-a: rgba(34, 211, 238, .22);
+    --glow-b: rgba(59, 130, 246, .16);
+    --glow-c: rgba(16, 185, 129, .12);
+  }
+  body[data-theme="blue"] {
+    --primary: #1d4ed8;
+    --primary-2: #60a5fa;
+    --primary-soft: #60a5fa;
+    --glow-a: rgba(37, 99, 235, .30);
+    --glow-b: rgba(129, 140, 248, .18);
+    --glow-c: rgba(56, 189, 248, .12);
+  }
+
+  /* ================= goal & reminder ================= */
+  .goal-bar {
+    margin-top: 13px;
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .08);
+    overflow: hidden;
+  }
+  .goal-bar i {
+    display: block;
+    width: 0;
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--primary-soft), var(--primary-2));
+    transition: width var(--t) var(--ease);
+  }
+  .goal-bar.done i { background: linear-gradient(90deg, var(--ok), #a3e635); }
+  .goal-text { margin-top: 7px; color: var(--muted); font-size: 12px; }
+  .goal-text b { color: var(--text-2); font-family: var(--font-num); font-weight: 600; }
+
+  .reminder-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 12px 16px;
+    color: #ffe0e6;
+    font-size: 13.5px;
+    background: linear-gradient(120deg, rgba(244, 63, 94, .20), rgba(124, 58, 237, .16));
+    border: 1px solid rgba(244, 63, 94, .34);
+    border-radius: var(--r-md);
+    box-shadow: var(--sh-1);
+  }
+  .reminder-bar.hidden { display: none; }
+  .reminder-bar svg { width: 20px; height: 20px; flex: none; color: var(--accent-soft); }
+  .reminder-bar b { color: #fff; }
+  .reminder-close {
+    margin-left: auto;
+    width: 30px;
+    height: 30px;
+    flex: none;
+    color: inherit;
+    font-size: 18px;
+    line-height: 1;
+    background: none;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .reminder-close:hover { background: rgba(255, 255, 255, .14); }
+
+  /* ================= settings modal ================= */
+  #settingsModalBox { width: min(680px, 100%); }
+  .settings-section { margin-bottom: 16px; }
+  .settings-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+  #settingsModalBox .text-input { padding: 8px 11px; font-size: 13.5px; }
+  .settings-section h3 {
+    margin-bottom: 10px;
+    color: var(--primary-soft);
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: .6px;
+  }
+  .settings-row { margin-bottom: 10px; }
+  .settings-hint { margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+  .switch-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 10px;
+    color: var(--text-2);
+    font-size: 13.5px;
+    cursor: pointer;
+  }
+  .switch-row input { width: 16px; height: 16px; margin-top: 3px; flex: none; accent-color: var(--primary-soft); cursor: pointer; }
+  .switch-row input:disabled { cursor: default; }
+  .switch-row input:disabled + span { opacity: .5; }
+  .check-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px 16px; }
+  .check-grid label { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 13px; cursor: pointer; }
+  .check-grid input { width: 15px; height: 15px; flex: none; accent-color: var(--primary-soft); cursor: pointer; }
+  .theme-picker { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+  .theme-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+    padding: 8px 15px;
+    color: var(--text-2);
+    font-family: inherit;
+    font-size: 13px;
+    background: rgba(255, 255, 255, .05);
+    border: 1px solid rgba(255, 255, 255, .10);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  }
+  .theme-chip i { width: 12px; height: 12px; border-radius: 50%; }
+  .theme-chip:hover { border-color: var(--line-strong); color: #fff; }
+  .theme-chip.active { color: #fff; border-color: var(--primary-soft); background: rgba(167, 139, 250, .16); }
+  .sw-violet { background: linear-gradient(135deg, #7c3aed, #f43f5e); }
+  .sw-cyan { background: linear-gradient(135deg, #0e7490, #22d3ee); }
+  .sw-blue { background: linear-gradient(135deg, #1d4ed8, #60a5fa); }
+  .path-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .path-row code {
+    flex: 1 1 240px;
+    min-width: 0;
+    padding: 8px 10px;
+    color: var(--muted);
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-size: 12px;
+    background: rgba(0, 0, 0, .30);
+    border: 1px solid rgba(255, 255, 255, .08);
+    border-radius: 8px;
+    word-break: break-all;
+  }
+  /* ================= responsive ================= */
+  @media (max-width: 980px) {
+    .game-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 900px) {
+    header { flex-direction: column; align-items: stretch; }
+    .toolbar { justify-content: flex-start; }
+    .summary-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 720px) {
+    body { padding: 18px 14px 56px; }
+    h1 { font-size: 22px; }
+    .record-filters { grid-template-columns: 1fr 1fr; }
+    .game-grid { grid-template-columns: 1fr; }
+    .config-grid { grid-template-columns: 1fr; }
+    .bar-row { grid-template-columns: 104px 1fr 62px; gap: 8px; }
+    .session-card { flex-wrap: wrap; gap: 10px; }
+    .session-right { margin-left: 0; width: 100%; display: flex; align-items: center; justify-content: space-between; text-align: left; }
+    .session-right .row-del { margin-top: 0; }
+    .trend { height: 168px; }
+    .trend-axis { height: 168px; }
+    .trend-col { flex: 1 0 30px; }
+    .trend-label, .trend-value { font-size: 10px; }
+    .session-range { font-size: 15px; }
+    .record-grid { grid-template-columns: 1fr; }
+    .settings-grid2 { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    .summary-grid { grid-template-columns: 1fr; }
+    .stat-card { padding: 15px 16px; }
+    .stat-value { font-size: 26px; }
+    .ghost-btn, .file-btn, .edit-card-btn { min-height: 34px; padding: 7px 12px; font-size: 12.5px; }
+    .record-time { min-width: 110px; }
+    .chart-card { padding: 14px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="reminder-bar hidden" id="reminderBar"></div>
+
+  <header>
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3.2 2"/></svg>
+      </div>
+      <div>
+        <h1>游戏时长统计</h1>
+        <div class="subtitle"><span class="live-dot" aria-hidden="true"></span>本地数据 · 自己电脑自己玩 · 更新于 <b id="updated">--</b></div>
+      </div>
+    </div>
+    <div class="toolbar">
+      <button class="ghost-btn" id="addRecordBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8.4v7.2M8.4 12h7.2"/></svg>
+        补录记录
+      </button>
+      <button class="ghost-btn danger" id="historyBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9.5 7V4.8h5V7M6.5 7l.9 12.2h9.2L17.5 7"/></svg>
+        删除记录
+      </button>
+      <a class="ghost-btn" id="exportBtn" href="/api/export" download>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5v11m0 0-4-4m4 4 4-4M4.5 20h15"/></svg>
+        导出备份
+      </a>
+      <button class="ghost-btn" id="addGameBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.2" y="3.2" width="17.6" height="17.6" rx="4.5"/><path d="M12 8.2v7.6M8.2 12h7.6"/></svg>
+        添加游戏
+      </button>
+      <button class="ghost-btn" id="showGamesBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6.5h12M8 12h12M8 17.5h12M4 6.5h.01M4 12h.01M4 17.5h.01"/></svg>
+        可统计游戏
+      </button>
+      <button class="ghost-btn" id="settingsBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 3.6v2.2M12 18.2v2.2M4.9 7.9l1.9 1.1M17.2 15l1.9 1.1M4.9 16.1l1.9-1.1M17.2 9l1.9-1.1"/></svg>
+        设置
+      </button>
+    </div>
+  </header>
+
+  <div class="summary-grid">
+    <div class="stat-card" style="--glow: rgba(124, 58, 237, .34)">
+      <div class="stat-head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.2" y="5" width="17.6" height="15.8" rx="3.6"/><path d="M8 3.2v3.6M16 3.2v3.6M3.2 10.4h17.6"/><path d="M12 13v3.4l2.2 1.3"/></svg>
+        今日游戏总时长
+      </div>
+      <div class="stat-value" id="sToday">0<small>分钟</small></div>
+      <div class="goal-bar" id="goalBar" style="display:none"><i></i></div>
+      <div class="goal-text" id="goalText" style="display:none"></div>
+    </div>
+    <div class="stat-card" style="--glow: rgba(167, 139, 250, .32)">
+      <div class="stat-head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.4 16.6l4.8-4.8 3.4 3.4 7.6-7.6"/><path d="M15.2 7.6h4v4"/></svg>
+        近 7 天
+      </div>
+      <div class="stat-value" id="sWeek">0<small>分钟</small></div>
+    </div>
+    <div class="stat-card" style="--glow: rgba(244, 63, 94, .28)">
+      <div class="stat-head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.2 3.2h9.6M7.2 20.8h9.6M8.4 3.2v3.9c0 2.2 3.6 3.6 3.6 5.4s-3.6 3.2-3.6 5.4v3.9M15.6 3.2v3.9c0 2.2-3.6 3.6-3.6 5.4s3.6 3.2 3.6 5.4v3.9"/></svg>
+        累计时长
+      </div>
+      <div class="stat-value" id="sAll">0<small>分钟</small></div>
+    </div>
+    <div class="stat-card" style="--glow: rgba(56, 189, 248, .26)">
+      <div class="stat-head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.2 21 8l-9 4.8L3 8l9-4.8Z"/><path d="m3.4 12.6 8.6 4.6 8.6-4.6"/></svg>
+        已记录时段
+      </div>
+      <div class="stat-value" id="sSessions">0<small>段</small></div>
+    </div>
+  </div>
+
+  <section class="block" id="block-sessions">
+    <div class="section-title">最近时段<button class="link-btn" id="recordsBtn">查看全部记录</button></div>
+    <div class="session-list" id="sessionList"></div>
+  </section>
+
+  <section class="block" id="block-trend">
+    <div class="section-title">近 14 天趋势</div>
+    <div class="chart-card" id="trendChart"></div>
+  </section>
+
+  <section class="block" id="block-calendar">
+    <div class="section-title">活跃日历(近 13 周)</div>
+    <div class="chart-card" id="heatCard"></div>
+  </section>
+
+  <section class="block" id="block-games">
+    <div class="section-title">各游戏总览</div>
+    <div class="game-grid" id="gameGrid"></div>
+  </section>
+
+  <section class="block" id="block-days">
+    <div class="section-title">近 7 天明细</div>
+    <div class="day-list" id="dayList"></div>
+  </section>
+
+  <footer>统计规则:游戏进程运行时即计时 · 顶部总时长按同时段去重 · 数据仅保存在本机</footer>
+</div>
+
+<div class="modal-backdrop hidden" id="gamesModal">
+  <div class="modal" id="gamesModalBox">
+    <div class="modal-head">
+      <h2>当前可统计的游戏</h2>
+      <button class="modal-close" id="closeGamesBtn" title="关闭" aria-label="关闭">×</button>
+    </div>
+    <div class="config-grid" id="configGrid"></div>
+    <div class="modal-tip">
+      想增删游戏?点右上角"添加游戏",或打开"桌面 → code → game-time-tracker"里的 games.txt;
+      改动后几秒内自动生效。已传头像的会显示图片,没有的暂用字母图标。
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="addGameModal">
+  <div class="modal" id="addGameModalBox">
+    <div class="modal-head">
+      <h2 id="addModalTitle">添加游戏</h2>
+      <button class="modal-close" id="closeAddBtn" title="关闭" aria-label="关闭">×</button>
+    </div>
+
+    <div class="form-field">
+      <label class="form-label" for="gameNameInput">显示名称</label>
+      <input class="text-input" id="gameNameInput" placeholder="例如:我的世界">
+    </div>
+
+    <div class="form-field">
+      <label class="form-label" for="gameProcInput">进程名(选一个正在运行的,或手动输入)</label>
+      <input class="text-input" id="gameProcInput" list="procList" placeholder="例如:javaw / cs2 / LeagueClient">
+      <datalist id="procList"></datalist>
+      <div class="exe-pick-row">
+        <label class="file-btn" id="exePickBtn" for="exeInput">选择游戏程序 (.exe)</label>
+        <span class="exe-hint" id="exeHint"></span>
+        <input type="file" id="exeInput" accept=".exe" hidden>
+      </div>
+    </div>
+
+    <div class="form-field">
+      <label class="form-label">自定义头像(可选)</label>
+      <div class="avatar-file-row">
+        <img class="avatar-preview" id="avatarPreview" alt="头像预览">
+        <button class="file-btn" id="avatarPickBtn">选择图片</button>
+        <input type="file" id="avatarInput" accept="image/png,image/jpeg,image/webp" hidden>
+      </div>
+    </div>
+
+    <div class="form-error" id="addGameError"></div>
+    <div class="form-actions">
+      <button class="cancel-btn" id="cancelAddBtn">取消</button>
+      <button class="primary-btn" id="saveGameBtn">保存并开始统计</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="historyModal">
+  <div class="modal" id="historyModalBox">
+    <div class="modal-head">
+      <h2>记录管理</h2>
+      <button class="modal-close" id="closeHistoryBtn" title="关闭" aria-label="关闭">×</button>
+    </div>
+    <div id="historyList"></div>
+    <div class="modal-tip">删除后无法恢复。单个时段可在最近时段里点删除;这里可以按游戏清空,也可以一次性清空全部。</div>
+    <div class="form-actions">
+      <button class="danger-btn" id="clearAllHistoryBtn">清空全部记录</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="addRecordModal">
+  <div class="modal" id="addRecordModalBox">
+    <div class="modal-head">
+      <h2>补录记录</h2>
+      <button class="modal-close" id="closeRecordBtn" title="关闭" aria-label="关闭">×</button>
+    </div>
+
+    <div class="form-field">
+      <label class="form-label" for="recordGame">游戏</label>
+      <select class="text-input" id="recordGame"></select>
+    </div>
+
+    <div class="record-grid">
+      <div class="form-field">
+        <label class="form-label" for="recordStart">开始时间</label>
+        <input class="text-input" type="datetime-local" id="recordStart">
+      </div>
+      <div class="form-field">
+        <label class="form-label" for="recordEnd">结束时间</label>
+        <input class="text-input" type="datetime-local" id="recordEnd">
+      </div>
+    </div>
+
+    <div class="form-error" id="recordError"></div>
+    <div class="modal-tip">用来补上漏掉的时间(比如关着记录器玩的、换电脑玩的),也可以手工修正。</div>
+    <div class="form-actions">
+      <button class="cancel-btn" id="cancelRecordBtn">取消</button>
+      <button class="primary-btn" id="saveRecordBtn">保存补录</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="recordsModal">
+  <div class="modal" id="recordsModalBox">
+    <div class="modal-head">
+      <h2>全部记录</h2>
+      <button class="modal-close" id="closeRecordsBtn" title="关闭" aria-label="关闭">×</button>
+    </div>
+    <div class="record-filters">
+      <select class="text-input" id="recordsGame"></select>
+      <input class="text-input" type="date" id="recordsFrom" title="开始日期">
+      <input class="text-input" type="date" id="recordsTo" title="结束日期">
+      <input class="text-input" id="recordsSearch" placeholder="搜索游戏或日期">
+    </div>
+    <div class="records-summary" id="recordsSummary">加载中...</div>
+    <div id="recordsList"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop hidden" id="settingsModal">
+  <div class="modal" id="settingsModalBox">
+    <div class="modal-head">
+      <h2>设置</h2>
+      <button class="modal-close" id="closeSettingsBtn" title="关闭" aria-label="关闭">×</button>
+    </div>
+
+    <div class="settings-section">
+      <h3>目标与提醒</h3>
+      <div class="settings-grid2">
+        <div class="settings-row">
+          <label class="form-label" for="setGoal">每日目标时长(分钟,0 = 不设)</label>
+          <input class="text-input" type="number" min="0" max="1440" step="10" id="setGoal">
+        </div>
+        <div class="settings-row">
+          <label class="form-label" for="setRemind">连续游戏提醒(分钟,0 = 关闭)</label>
+          <input class="text-input" type="number" min="0" max="1440" step="15" id="setRemind">
+        </div>
+      </div>
+      <div class="settings-hint">某一款游戏连续玩超过提醒时长、而且还在玩时,面板顶部会提示你休息。</div>
+      <div class="settings-row">
+        <label class="form-label" for="setMinSession">少于多少分钟的时段不计入统计(0 = 全都计入)</label>
+        <input class="text-input" type="number" min="0" max="120" step="0.5" id="setMinSession">
+        <div class="settings-hint">填 1 就是"只开了几十秒的不算"。原始数据仍写在 activity.csv 里,方便你核对。</div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3>界面</h3>
+      <div class="theme-picker" id="themePicker">
+        <button type="button" class="theme-chip" data-theme="violet"><i class="sw-violet"></i>紫罗兰</button>
+        <button type="button" class="theme-chip" data-theme="cyan"><i class="sw-cyan"></i>赛博青</button>
+        <button type="button" class="theme-chip" data-theme="blue"><i class="sw-blue"></i>暗夜蓝</button>
+      </div>
+      <div class="settings-row">
+        <label class="form-label" for="setRefresh">数据刷新间隔</label>
+        <select class="text-input" id="setRefresh">
+          <option value="3">3 秒</option>
+          <option value="5">5 秒</option>
+          <option value="10">10 秒</option>
+          <option value="30">30 秒</option>
+          <option value="60">1 分钟</option>
+        </select>
+      </div>
+      <div class="settings-row">
+        <div class="form-label">显示哪些模块</div>
+        <div class="check-grid" id="setModules">
+          <label><input type="checkbox" data-module="sessions">最近时段</label>
+          <label><input type="checkbox" data-module="trend">近 14 天趋势</label>
+          <label><input type="checkbox" data-module="calendar">活跃日历</label>
+          <label><input type="checkbox" data-module="games">各游戏总览</label>
+          <label><input type="checkbox" data-module="days">近 7 天明细</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h3>系统与数据</h3>
+      <label class="switch-row">
+        <input type="checkbox" id="setAutostart">
+        <span>开机自动启动统计(登录后静默后台运行)</span>
+      </label>
+      <label class="switch-row">
+        <input type="checkbox" id="setAutoBackup">
+        <span>每天自动备份一份数据到 backups 文件夹</span>
+      </label>
+      <div class="settings-row">
+        <div class="form-label">数据位置</div>
+        <div class="path-row">
+          <code id="setDataPath">--</code>
+          <button type="button" class="ghost-btn" id="openFolderBtn">打开文件夹</button>
+          <button type="button" class="ghost-btn" id="backupNowBtn">立即备份</button>
+        </div>
+        <div class="settings-hint" id="backupHint"></div>
+      </div>
+    </div>
+
+    <div class="form-error" id="settingsError"></div>
+    <div class="form-actions">
+      <button class="cancel-btn" id="cancelSettingsBtn">取消</button>
+      <button class="primary-btn" id="saveSettingsBtn">保存设置</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const COLORS = {
+  yuanshen: { color: '#6ee7b7', glow: 'rgba(110,231,183,.35)' },
+  genshinimpact: { color: '#6ee7b7', glow: 'rgba(110,231,183,.35)' },
+  starrail: { color: '#c4b5fd', glow: 'rgba(196,181,253,.35)' },
+  zenlesszonezero: { color: '#fcd34d', glow: 'rgba(252,211,77,.35)' }
+  ,minecraft: { color: '#4ade80', glow: 'rgba(74,222,128,.35)' }
+};
+
+const AVATARS = {
+  yuanshen: 'avatars/genshin.png',
+  genshinimpact: 'avatars/genshin.png',
+  starrail: 'avatars/starrail.png',
+  zenlesszonezero: 'avatars/zzz.png',
+  minecraft: 'avatars/minecraft.png'
+};
+
+function avatarClass(process) {
+  if (process === 'starrail') return ' avatar-starrail';
+  if (process === 'zenlesszonezero') return ' avatar-zzz';
+  if (process === 'minecraft') return ' avatar-minecraft';
+  return '';
+}
+
+function miniClass(process) {
+  if (process === 'starrail') return ' mini-starrail';
+  if (process === 'zenlesszonezero') return ' mini-zzz';
+  if (process === 'minecraft') return ' mini-minecraft';
+  return '';
+}
+
+function fmtMinutes(min) {
+  const m = Math.round(min);
+  if (m <= 0) return '0 分钟';
+  if (m < 60) return m + ' 分钟';
+  const h = Math.floor(m / 60);
+  const rest = m % 60;
+  return rest ? h + ' 小时 ' + rest + ' 分' : h + ' 小时';
+}
+
+function colorOf(process) {
+  return COLORS[process] || { color: '#60a5fa', glow: 'rgba(96,165,250,.3)' };
+}
+
+function badgeChar(name) {
+  if (name === '原神') return '原';
+  if (name === '崩坏：星穹铁道') return '铁';
+  if (name === '绝区零') return '零';
+  if (name === '我的世界') return 'M';
+  return name.slice(0, 1).toUpperCase();
+}
+
+function fmtDayKey(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  const weekday = '日一二三四五六'[new Date(y, m - 1, d).getDay()];
+  return m + '月' + d + '日 · 周' + weekday;
+}
+
+function todayKey() {
+  const now = new Date();
+  return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+}
+
+function renderSessions(data) {
+  const list = document.getElementById('sessionList');
+  list.innerHTML = '';
+
+  if (!data.recentSessions || !data.recentSessions.length) {
+    list.innerHTML = '<div class="day-empty">还没有完整时段 —— 打开游戏后这里会显示起止时间</div>';
+    return;
+  }
+
+  for (const s of data.recentSessions) {
+    const avatar = s.avatar || AVATARS[s.process];
+    const c = colorOf(s.process);
+    const dateLabel = s.dateKey === todayKey() ? '今天' : fmtDayKey(s.dateKey);
+    const card = document.createElement('div');
+    card.className = 'session-card';
+    card.innerHTML = `
+      <div>
+        <div class="session-date">${dateLabel}</div>
+        <div class="session-range">${s.startText}<span>开始</span>${s.endText}<span>结束</span></div>
+      </div>
+      <div class="session-game">
+        ${avatar ? `<img class="mini-avatar${miniClass(s.process)}" src="${avatar}" alt="" onerror="this.style.display='none'">` : ''}
+        <span style="color:${c.color}">${s.name}</span>
+      </div>
+      <div class="session-right">
+        <div class="session-min">${fmtMinutes(s.minutes)}</div>
+        <button class="row-del" data-act="del-session" data-proc="${s.process}" data-name="${s.name}" data-start="${s.startStamp}" data-end="${s.endStamp}" title="删除这条记录">删除</button>
+      </div>`;
+    list.appendChild(card);
+  }
+}
+
+function renderConfigured(list) {
+  const grid = document.getElementById('configGrid');
+  grid.innerHTML = '';
+  for (const g of list) {
+    const c = colorOf(g.process);
+    const avatar = g.avatar || AVATARS[g.process];
+    const visual = avatar
+      ? `<img class="config-avatar" src="${avatar}" alt="${g.name}" onerror="this.style.display='none'">`
+      : `<div class="config-badge" style="background:${c.color}">${badgeChar(g.name)}</div>`;
+    const card = document.createElement('div');
+    card.className = 'config-card';
+    card.innerHTML = `
+      ${visual}
+      <div>
+        <div class="config-name">${g.name}</div>
+        <div class="config-proc">${g.aliases || g.process}</div>
+      </div>
+      <div class="config-actions">
+        <button class="edit-card-btn" data-action="edit" data-proc="${g.process}" data-name="${g.name}" data-avatar="${g.avatar || ''}">编辑</button>
+        <button class="danger-btn" data-action="delete" data-proc="${g.process}" data-name="${g.name}">删除</button>
+      </div>`;
+    grid.appendChild(card);
+  }
+}
+
+function renderHistory(list) {
+  const el = document.getElementById('historyList');
+  if (!el) return;
+  el.innerHTML = '';
+  if (!list || !list.length) {
+    el.innerHTML = '<div class="day-empty">目前没有可删除的记录</div>';
+    return;
+  }
+  for (const h of list) {
+    const c = colorOf(h.process);
+    const avatar = h.avatar || AVATARS[h.process];
+    const visual = avatar
+      ? `<img class="history-avatar" src="${avatar}" alt="" onerror="this.style.display='none'">`
+      : `<div class="config-badge" style="background:${c.color};width:38px;height:38px;font-size:15px">${badgeChar(h.name)}</div>`;
+    const row = document.createElement('div');
+    row.className = 'history-row';
+    row.innerHTML = `
+      ${visual}
+      <div class="history-info">
+        <div class="history-name">${h.name}</div>
+        <div class="history-sub">${h.process} · ${fmtMinutes(h.minutes)} · ${h.count} 段</div>
+      </div>
+      <div class="history-right">
+        <button class="danger-btn" data-proc="${h.process}" data-name="${h.name}">删除记录</button>
+      </div>`;
+    el.appendChild(row);
+  }
+}
+
+function render(data) {
+  const s = data.summary;
+  document.getElementById('sToday').innerHTML = fmtMinutes(s.today) + '<small></small>';
+  document.getElementById('sWeek').innerHTML = fmtMinutes(s.week) + '<small></small>';
+  document.getElementById('sAll').innerHTML = fmtMinutes(s.all) + '<small></small>';
+  document.getElementById('sSessions').textContent = s.sessions;
+  document.getElementById('updated').textContent = data.updated;
+  lastDataStore.data = data;
+  renderGoal(s.today);
+  renderReminder(data.reminder || null);
+  renderSessions(data);
+  renderConfigured(data.configured || []);
+  renderHistory(data.history || []);
+  renderTrend(data.trend || []);
+  renderCalendar(data.calendar || []);
+
+  const grid = document.getElementById('gameGrid');
+  grid.innerHTML = '';
+  if (!data.games.length) {
+    grid.innerHTML = '<div class="empty-card">还没有游戏记录 —— 打开已添加的游戏后会自动统计</div>';
+  } else {
+    const maxTotal = Math.max.apply(null, data.games.map(x => x.totalMinutes).concat([1]));
+    for (const g of data.games) {
+      const c = colorOf(g.process);
+      const share = Math.max(4, Math.round(g.totalMinutes / maxTotal * 100));
+      const card = document.createElement('div');
+      card.className = 'game-card';
+      card.style.setProperty('--game-color', c.color);
+      card.style.setProperty('--game-glow', c.glow);
+      const avatar = g.avatar || AVATARS[g.process];
+      const avatarHtml = avatar
+        ? `<img class="game-avatar${avatarClass(g.process)}" src="${avatar}" alt="${g.name}" onerror="this.style.display='none'">`
+        : `<div class="game-badge">${badgeChar(g.name)}</div>`;
+      card.innerHTML = `
+        <div class="game-head">
+          ${avatarHtml}
+          <div class="game-name">${g.name}</div>
+        </div>
+        <div class="game-main">${fmtMinutes(g.totalMinutes)}</div>
+        <div class="game-sub">今日 ${fmtMinutes(g.todayMinutes)} · 近 7 天 ${fmtMinutes(g.weekMinutes)}</div>
+        <div class="game-share"><i style="width:${share}%"></i></div>`;
+      grid.appendChild(card);
+    }
+  }
+
+  const list = document.getElementById('dayList');
+  list.innerHTML = '';
+  for (const day of data.days) {
+    const card = document.createElement('div');
+    const isToday = day.date === todayKey();
+    const dateHtml = fmtDayKey(day.date) + (isToday ? '<span>今天</span>' : '');
+    if (!day.items.length) {
+      card.className = 'day-card is-empty';
+      card.innerHTML = '<div class="day-head"><div class="day-date">' + dateHtml + '</div><div class="day-total">无记录</div></div>';
+      list.appendChild(card);
+      continue;
+    }
+    const rows = day.items.map(g => {
+      const c = colorOf(g.process);
+      const avatar = g.avatar || AVATARS[g.process];
+      const miniAvatar = avatar
+        ? '<img class="mini-avatar' + miniClass(g.process) + '" src="' + avatar + '" alt="" onerror="this.style.display=\'none\'">'
+        : '';
+      return '<div class="bar-row">' +
+        '<div class="bar-name">' + miniAvatar + escHtml(g.name) + '</div>' +
+        '<div class="bar-track"><div class="bar-fill" style="width:' + g.percent + '%;--game-color:' + c.color + ';--game-glow:' + c.glow + '"></div></div>' +
+        '<div class="bar-min">' + fmtMinutes(g.minutes) + '</div>' +
+        '</div>';
+    }).join('');
+    card.className = 'day-card';
+    card.innerHTML = '<div class="day-head">' +
+      '<div class="day-date">' + dateHtml + '</div>' +
+      '<div class="day-total">合计 <b>' + fmtMinutes(day.totalMinutes) + '</b>' +
+      '<button class="row-del day-del" data-act="del-day" data-date="' + day.date + '" title="删除这一天的记录">清除当天</button>' +
+      '</div></div>' + rows;
+    list.appendChild(card);
+  }
+}
+
+async function load() {
+  try {
+    const res = await fetch('/api/data?_=' + Date.now());
+    const data = await res.json();
+    render(data);
+  } catch (e) {
+    document.getElementById('updated').textContent = '连接失败';
+  }
+}
+
+const showBtn = document.getElementById('showGamesBtn');
+const modal = document.getElementById('gamesModal');
+const closeBtn = document.getElementById('closeGamesBtn');
+const modalBox = document.getElementById('gamesModalBox');
+showBtn.addEventListener('click', () => modal.classList.remove('hidden'));
+closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
+modal.addEventListener('click', (e) => {
+  if (e.target === modal) modal.classList.add('hidden');
+});
+
+// add game
+const addModal = document.getElementById('addGameModal');
+const addBtn = document.getElementById('addGameBtn');
+const closeAddBtn = document.getElementById('closeAddBtn');
+const cancelAddBtn = document.getElementById('cancelAddBtn');
+const saveGameBtn = document.getElementById('saveGameBtn');
+const addGameError = document.getElementById('addGameError');
+const nameInput = document.getElementById('gameNameInput');
+const procInput = document.getElementById('gameProcInput');
+const procList = document.getElementById('procList');
+const avatarInput = document.getElementById('avatarInput');
+const avatarPickBtn = document.getElementById('avatarPickBtn');
+const avatarPreview = document.getElementById('avatarPreview');
+const exePickBtn = document.getElementById('exePickBtn');
+const exeInput = document.getElementById('exeInput');
+const exeHint = document.getElementById('exeHint');
+let addAvatarData = '';
+let editingProcess = '';
+const addModalTitle = document.getElementById('addModalTitle');
+const configGrid = document.getElementById('configGrid');
+
+async function refreshProcList() {
+  try {
+    const res = await fetch('/api/processes');
+    const list = await res.json();
+    procList.innerHTML = '';
+    for (const p of list) {
+      const o = document.createElement('option');
+      o.value = p;
+      procList.appendChild(o);
+    }
+  } catch (e) { /* ignore; manual entry still works */ }
+}
+
+function openAddModal(proc = '', dispName = '', avatar = '') {
+  addModal.classList.remove('hidden');
+  addGameError.textContent = '';
+  editingProcess = proc;
+
+  if (proc) {
+    addModalTitle.textContent = '编辑游戏';
+    nameInput.value = dispName || '';
+    procInput.value = proc;
+    procInput.disabled = true;
+    exePickBtn.classList.add('disabled');
+    addAvatarData = '';
+    if (avatar) {
+      avatarPreview.src = avatar;
+      avatarPreview.classList.add('show');
+    } else {
+      avatarPreview.classList.remove('show');
+      avatarPreview.removeAttribute('src');
+    }
+  } else {
+    addModalTitle.textContent = '添加游戏';
+    nameInput.value = '';
+    procInput.value = '';
+    procInput.disabled = false;
+    exePickBtn.classList.remove('disabled');
+    addAvatarData = '';
+    avatarPreview.classList.remove('show');
+    avatarPreview.removeAttribute('src');
+  }
+
+  avatarInput.value = '';
+  exeHint.textContent = '';
+  exeInput.value = '';
+  refreshProcList();
+}
+
+function closeAddModal() {
+  editingProcess = '';
+  addModal.classList.add('hidden');
+}
+
+addBtn.addEventListener('click', () => openAddModal());
+closeAddBtn.addEventListener('click', closeAddModal);
+cancelAddBtn.addEventListener('click', closeAddModal);
+addModal.addEventListener('click', (e) => {
+  if (e.target === addModal) closeAddModal();
+});
+
+configGrid.addEventListener('click', async (e) => {
+  const btn = e.target.closest('.config-actions button');
+  if (!btn) return;
+  if (btn.dataset.action === 'edit') {
+    openAddModal(btn.dataset.proc, btn.dataset.name, btn.dataset.avatar || '');
+    return;
+  }
+  if (btn.dataset.action === 'delete') {
+    const proc = btn.dataset.proc;
+    const name = btn.dataset.name;
+    if (!confirm('把「' + name + '」移出统计名单吗?\n确定 = 移出;取消 = 保留')) return;
+    const deleteHistory = confirm('是否同时删除「' + name + '」的全部历史记录?\n确定 = 一起删;取消 = 只移出并保留记录');
+    try {
+      const res = await fetch('/api/delete-game', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ process: proc, deleteHistory: deleteHistory })
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) throw new Error(json.error || '删除失败');
+      load();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+});
+
+avatarPickBtn.addEventListener('click', () => avatarInput.click());
+exeInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const processName = file.name.replace(/\.exe$/i, '').toLowerCase();
+  if (processName) {
+    procInput.value = processName;
+    if (!nameInput.value.trim()) nameInput.value = file.name.replace(/\.exe$/i, '');
+  }
+  exeHint.textContent = '已选: ' + file.name + ' → 进程名 ' + processName;
+  addGameError.textContent = '';
+});
+avatarInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) {
+    addGameError.textContent = '图片不能超过 2MB';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    addAvatarData = ev.target.result;
+    avatarPreview.src = ev.target.result;
+    avatarPreview.classList.add('show');
+    addGameError.textContent = '';
+  };
+  reader.readAsDataURL(file);
+});
+
+saveGameBtn.addEventListener('click', async () => {
+  const processName = (editingProcess || procInput.value.trim()).toLowerCase();
+  const displayName = nameInput.value.trim();
+  addGameError.textContent = '';
+
+  if (!processName) {
+    addGameError.textContent = '请选择或输入要统计的游戏进程名';
+    return;
+  }
+
+  saveGameBtn.disabled = true;
+  try {
+    const res = await fetch('/api/games', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ process: processName, name: displayName, avatarData: addAvatarData, update: !!editingProcess })
+    });
+    const json = await res.json();
+    if (!res.ok || json.error) throw new Error(json.error || '保存失败');
+    closeAddModal();
+    load();
+  } catch (e) {
+    addGameError.textContent = e.message;
+  } finally {
+    saveGameBtn.disabled = false;
+  }
+});
+
+// record management
+const historyModal = document.getElementById('historyModal');
+const historyBtn = document.getElementById('historyBtn');
+const closeHistoryBtn = document.getElementById('closeHistoryBtn');
+const historyListEl = document.getElementById('historyList');
+const clearAllHistoryBtn = document.getElementById('clearAllHistoryBtn');
+
+historyBtn.addEventListener('click', () => historyModal.classList.remove('hidden'));
+closeHistoryBtn.addEventListener('click', () => historyModal.classList.add('hidden'));
+historyModal.addEventListener('click', (e) => {
+  if (e.target === historyModal) historyModal.classList.add('hidden');
+});
+
+historyListEl.addEventListener('click', async (e) => {
+  const btn = e.target.closest('.danger-btn');
+  if (!btn) return;
+  const proc = btn.dataset.proc;
+  const name = btn.dataset.name;
+  if (!confirm('删除「' + name + '」的全部历史记录?此操作不可恢复。')) return;
+  try {
+    const res = await fetch('/api/delete-history', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ process: proc })
+    });
+    if (!res.ok) throw new Error('删除失败');
+    load();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+clearAllHistoryBtn.addEventListener('click', async () => {
+  if (!confirm('确定清空全部历史记录?此操作不可恢复。')) return;
+  try {
+    const res = await fetch('/api/delete-history', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ process: 'all' })
+    });
+    if (!res.ok) throw new Error('删除失败');
+    load();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+// ---- 补录记录 / 单条删除 / 按天删除 ----
+const lastDataStore = { data: null };
+const recordModal = document.getElementById('addRecordModal');
+const recordGame = document.getElementById('recordGame');
+const recordStart = document.getElementById('recordStart');
+const recordEnd = document.getElementById('recordEnd');
+const recordError = document.getElementById('recordError');
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+function toInputValue(d) {
+  return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) +
+    'T' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+}
+
+function fillRecordGames(data) {
+  const list = [];
+  const seen = new Set();
+  for (const g of (data && data.configured) || []) {
+    if (!seen.has(g.process)) { seen.add(g.process); list.push(g); }
+  }
+  for (const g of (data && data.history) || []) {
+    if (!seen.has(g.process)) { seen.add(g.process); list.push(g); }
+  }
+  const keep = recordGame.value;
+  if (!list.length) {
+    recordGame.innerHTML = '<option value="">还没有添加游戏</option>';
+    return list;
+  }
+  recordGame.innerHTML = list.map(g => '<option value="' + g.process + '">' + g.name + '</option>').join('');
+  if (keep && list.some(g => g.process === keep)) recordGame.value = keep;
+  return list;
+}
+
+function openRecordModal() {
+  fillRecordGames(lastDataStore.data);
+  if (!recordStart.value || !recordEnd.value) {
+    const end = new Date();
+    end.setSeconds(0, 0);
+    const start = new Date(end.getTime() - 60 * 60000);
+    recordStart.value = toInputValue(start);
+    recordEnd.value = toInputValue(end);
+  }
+  recordError.textContent = '';
+  recordModal.classList.remove('hidden');
+}
+
+async function postJson(url, payload) {
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json.error) throw new Error(json.error || '操作失败');
+    load();
+    return json;
+  } catch (err) {
+    alert(err.message);
+    return null;
+  }
+}
+
+document.getElementById('addRecordBtn').addEventListener('click', openRecordModal);
+document.getElementById('closeRecordBtn').addEventListener('click', () => recordModal.classList.add('hidden'));
+document.getElementById('cancelRecordBtn').addEventListener('click', () => recordModal.classList.add('hidden'));
+recordModal.addEventListener('click', (e) => { if (e.target === recordModal) recordModal.classList.add('hidden'); });
+
+document.getElementById('saveRecordBtn').addEventListener('click', async () => {
+  const processName = recordGame.value;
+  const start = recordStart.value;
+  const end = recordEnd.value;
+  recordError.textContent = '';
+  if (!processName) { recordError.textContent = '请先在添加游戏里加一个游戏。'; return; }
+  if (!start || !end) { recordError.textContent = '请选择开始和结束时间。'; return; }
+  if (end <= start) { recordError.textContent = '结束时间必须晚于开始时间。'; return; }
+  const json = await postJson('/api/add-record', {
+    process: processName,
+    start: start.replace('T', ' ') + ':00',
+    end: end.replace('T', ' ') + ':00'
+  });
+  if (json) recordModal.classList.add('hidden');
+});
+
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  if (btn.dataset.act === 'del-session') {
+    const label = btn.dataset.name + ' ' + btn.dataset.start.slice(5, 16) + ' -> ' + btn.dataset.end.slice(11, 16);
+    if (!confirm('删除这条记录?\n' + label + '\n删除后无法恢复。')) return;
+    await postJson('/api/delete-session', {
+      process: btn.dataset.proc,
+      start: btn.dataset.start,
+      end: btn.dataset.end
+    });
+  } else if (btn.dataset.act === 'del-day') {
+    if (!confirm('删除 ' + btn.dataset.date + ' 的全部游戏记录?\n删除后无法恢复。')) return;
+    await postJson('/api/delete-day', { date: btn.dataset.date });
+  }
+});
+
+// ---- 全部记录 / 近 14 天趋势 / 活跃日历 ----
+const recordsModal = document.getElementById('recordsModal');
+const recordsList = document.getElementById('recordsList');
+const recordsGameSel = document.getElementById('recordsGame');
+const recordsFrom = document.getElementById('recordsFrom');
+const recordsTo = document.getElementById('recordsTo');
+const recordsSearch = document.getElementById('recordsSearch');
+const recordsSummary = document.getElementById('recordsSummary');
+
+function escHtml(text) {
+  return String(text).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+}
+
+function fillRecordsGames(data) {
+  const list = [];
+  const seen = new Set();
+  for (const g of (data && data.configured) || []) { if (!seen.has(g.process)) { seen.add(g.process); list.push(g); } }
+  for (const g of (data && data.history) || []) { if (!seen.has(g.process)) { seen.add(g.process); list.push(g); } }
+  const keep = recordsGameSel.value;
+  recordsGameSel.innerHTML = '<option value="">全部游戏</option>' +
+    list.map(g => '<option value="' + g.process + '">' + escHtml(g.name) + '</option>').join('');
+  recordsGameSel.value = keep || '';
+}
+
+async function loadRecords() {
+  const params = new URLSearchParams();
+  if (recordsGameSel.value) params.set('process', recordsGameSel.value);
+  if (recordsFrom.value) params.set('from', recordsFrom.value);
+  if (recordsTo.value) params.set('to', recordsTo.value);
+  if (recordsSearch.value.trim()) params.set('q', recordsSearch.value.trim());
+  recordsSummary.textContent = '加载中...';
+  try {
+    const res = await fetch('/api/records?' + params.toString() + '&_=' + Date.now());
+    const data = await res.json();
+    recordsSummary.textContent = '共 ' + data.total + ' 条记录 · 合计 ' + fmtMinutes(data.minutes) +
+      (data.truncated ? '(只显示前 ' + data.limit + ' 条)' : '');
+    if (!data.items.length) {
+      recordsList.innerHTML = '<div class="day-empty">没有匹配的记录</div>';
+      return;
+    }
+    recordsList.innerHTML = data.items.map(r => {
+      const avatar = r.avatar || AVATARS[r.process];
+      const visual = avatar
+        ? '<img class="mini-avatar' + miniClass(r.process) + '" src="' + avatar + '" alt="" onerror="this.style.display=\'none\'">'
+        : '';
+      return '<div class="record-row">' +
+        '<div class="record-time"><b>' + escHtml(r.dateKey) + '</b><span>' + escHtml(r.startText) + ' → ' + escHtml(r.endText) + '</span></div>' +
+        '<div class="record-game">' + visual + escHtml(r.name) + '</div>' +
+        '<div class="record-min">' + fmtMinutes(r.minutes) + '</div>' +
+        '<button class="row-del" data-act="del-session-modal" data-proc="' + r.process + '" data-name="' + escHtml(r.name) + '" data-start="' + r.startStamp + '" data-end="' + r.endStamp + '">删除</button>' +
+        '</div>';
+    }).join('');
+  } catch (e) {
+    recordsSummary.textContent = '加载失败';
+  }
+}
+
+document.getElementById('recordsBtn').addEventListener('click', () => {
+  recordsModal.classList.remove('hidden');
+  fillRecordsGames(lastDataStore.data);
+  loadRecords();
+});
+document.getElementById('closeRecordsBtn').addEventListener('click', () => recordsModal.classList.add('hidden'));
+recordsModal.addEventListener('click', (e) => { if (e.target === recordsModal) recordsModal.classList.add('hidden'); });
+recordsGameSel.addEventListener('change', loadRecords);
+recordsFrom.addEventListener('change', loadRecords);
+recordsTo.addEventListener('change', loadRecords);
+let recordsSearchTimer = null;
+recordsSearch.addEventListener('input', () => {
+  clearTimeout(recordsSearchTimer);
+  recordsSearchTimer = setTimeout(loadRecords, 250);
+});
+
+recordsList.addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-act="del-session-modal"]');
+  if (!btn) return;
+  const label = btn.dataset.name + ' ' + btn.dataset.start.slice(5, 16) + ' -> ' + btn.dataset.end.slice(11, 16);
+  if (!confirm('删除这条记录?\n' + label + '\n删除后无法恢复。')) return;
+  try {
+    const res = await fetch('/api/delete-session', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ process: btn.dataset.proc, start: btn.dataset.start, end: btn.dataset.end })
+    });
+    const json = await res.json();
+    if (!res.ok || json.error) throw new Error(json.error || '删除失败');
+    loadRecords();
+    load();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+const HEAT_LEVELS = ['rgba(255,255,255,.06)', 'rgba(110,231,183,.3)', 'rgba(110,231,183,.52)', 'rgba(110,231,183,.74)', '#6ee7b7'];
+
+function heatLevel(minutes, max) {
+  if (minutes <= 0) return 0;
+  if (max <= 0) return 1;
+  const ratio = minutes / max;
+  if (ratio > 0.75) return 4;
+  if (ratio > 0.5) return 3;
+  if (ratio > 0.25) return 2;
+  return 1;
+}
+
+function niceStep(raw) {
+  const pow = Math.pow(10, Math.floor(Math.log(raw) / Math.LN10));
+  const n = raw / pow;
+  const s = n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10;
+  return s * pow;
+}
+
+function renderTrend(trend) {
+  const el = document.getElementById('trendChart');
+  if (!el || !trend || !trend.length) return;
+  const rawMax = Math.max.apply(null, trend.map(d => d.totalMinutes).concat([0]));
+  const step = niceStep(Math.max(4, rawMax) / 4);
+  const niceMax = step * 4;
+
+  const used = [];
+  for (const d of trend) {
+    for (const g of d.items) {
+      if (!used.some(u => u.process === g.process)) used.push(g);
+    }
+  }
+
+  const axis = '<div class="trend-axis"><div class="trend-axis-spacer"></div>' +
+    '<div class="trend-axis-scale">' +
+    [1, .75, .5, .25, 0].map(r => '<span>' + Math.round(niceMax * r) + '</span>').join('') +
+    '</div><div class="trend-axis-spacer"></div></div>';
+
+  const grid = '<div class="trend-grid">' + [0, 1, 2, 3, 4].map(() => '<i></i>').join('') + '</div>';
+
+  const bars = trend.map(d => {
+    const height = d.totalMinutes > 0 ? Math.max(3, d.totalMinutes / niceMax * 100) : 0;
+    const segs = d.items.map(g => {
+      const c = colorOf(g.process);
+      const share = d.totalMinutes ? Math.max(3, g.minutes / d.totalMinutes * 100) : 0;
+      return '<div class="trend-seg" style="height:' + share + '%;background:linear-gradient(180deg,' + c.color + ',' + c.color + 'b8)" ' +
+        'title="' + escHtml(g.name) + ' · ' + fmtMinutes(g.minutes) + '"></div>';
+    }).join('');
+    const isToday = d.date === todayKey();
+    return '<div class="trend-col' + (isToday ? ' is-today' : '') + '">' +
+      '<div class="trend-value">' + (d.totalMinutes > 0 ? Math.round(d.totalMinutes) : '') + '</div>' +
+      '<div class="trend-bar-area"><div class="trend-bar" style="height:' + height + '%">' + segs + '</div></div>' +
+      '<div class="trend-label">' + d.date.slice(5).replace('-', '/') + '</div>' +
+      '</div>';
+  }).join('');
+
+  const legend = used.length
+    ? '<div class="chart-legend">' + used.map(g => '<span><i style="background:' + colorOf(g.process).color + '"></i>' + escHtml(g.name) + '</span>').join('') + '</div>'
+    : '';
+
+  el.innerHTML = '<div class="chart-head"><div class="chart-title">每天总时长 · 按游戏分色,鼠标悬停看明细</div>' + legend + '</div>' +
+    '<div class="trend-body">' + axis + '<div class="trend-wrap">' + grid + '<div class="trend">' + bars + '</div></div></div>';
+}
+
+function renderCalendar(calendar) {
+  const el = document.getElementById('heatCard');
+  if (!el || !calendar || !calendar.length) return;
+  const max = Math.max.apply(null, calendar.map(d => d.minutes).concat([0]));
+
+  const cells = [];
+  const head = calendar[0].date.split('-').map(Number);
+  const leading = (new Date(head[0], head[1] - 1, head[2]).getDay() + 6) % 7;
+  for (let i = 0; i < leading; i++) cells.push(null);
+  for (const d of calendar) cells.push(d);
+  while (cells.length % 7 !== 0) cells.push(null);
+  const weeks = cells.length / 7;
+
+  let grid = '';
+  for (let w = 0; w < weeks; w++) {
+    let label = '';
+    for (let i = 0; i < 7; i++) {
+      const cell = cells[w * 7 + i];
+      if (cell) {
+        const parts = cell.date.split('-').map(Number);
+        if (parts[2] <= 7) label = parts[1] + '月';
+        break;
+      }
+    }
+    grid += '<div class="heat-month">' + label + '</div>';
+    for (let i = 0; i < 7; i++) {
+      const cell = cells[w * 7 + i];
+      grid += cell
+        ? '<div class="heat-cell" style="background:' + HEAT_LEVELS[heatLevel(cell.minutes, max)] + '" title="' + cell.date + ' · ' + fmtMinutes(cell.minutes) + '"></div>'
+        : '<div class="heat-cell empty"></div>';
+    }
+  }
+
+  const weekdays = ['一', '', '三', '', '五', '', '日']
+    .map(t => '<span>' + t + '</span>').join('');
+
+  const totalMinutes = calendar.reduce((sum, d) => sum + d.minutes, 0);
+  const activeDays = calendar.filter(d => d.minutes > 0).length;
+  const best = calendar.reduce((a, b) => (b.minutes > a.minutes ? b : a), calendar[0]);
+
+  el.innerHTML = '<div class="heat-wrap">' +
+    '<div class="heat-weekdays">' + weekdays + '</div>' +
+    '<div class="heat-grid">' + grid + '</div>' +
+    '</div>' +
+    '<div class="heat-summary">近 13 周共 <b>' + fmtMinutes(totalMinutes) + '</b> · 有记录 <b>' + activeDays + '</b> 天 · 最高一天 <b>' + best.date.slice(5) + ' ' + fmtMinutes(best.minutes) + '</b>' +
+    '<span class="heat-legend" style="float:right">' +
+    HEAT_LEVELS.slice(1).map(c => '<span style="background:' + c + '"></span>').join('') +
+    '<em>越亮玩得越久</em></span></div>';
+}
+
+// ---- 设置 ----
+let appSettings = null;
+let refreshTimerId = null;
+let refreshSecondsNow = 0;
+let dismissedReminder = '';
+
+const DEFAULT_UI_SETTINGS = {
+  dailyGoalMinutes: 120,
+  remindMinutes: 0,
+  minSessionMinutes: 1,
+  theme: 'violet',
+  refreshSeconds: 5,
+  showSessions: true,
+  showTrend: true,
+  showCalendar: true,
+  showGames: true,
+  showDays: true,
+  autoBackup: true
+};
+
+const MODULE_KEYS = ['sessions', 'trend', 'calendar', 'games', 'days'];
+
+function moduleFlag(key) {
+  return 'show' + key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+function applyTheme(theme) {
+  const name = ['violet', 'cyan', 'blue'].indexOf(theme) >= 0 ? theme : 'violet';
+  document.body.dataset.theme = name;
+  try { localStorage.setItem('gtt-theme', name); } catch (e) { /* ignore */ }
+}
+
+function applyModuleVisibility(settings) {
+  for (const key of MODULE_KEYS) {
+    const el = document.getElementById('block-' + key);
+    if (el) el.style.display = settings[moduleFlag(key)] === false ? 'none' : '';
+  }
+}
+
+function startRefresh(seconds) {
+  const secs = Math.max(2, Number(seconds) || 5);
+  if (refreshTimerId && refreshSecondsNow === secs) return;
+  if (refreshTimerId) clearInterval(refreshTimerId);
+  refreshSecondsNow = secs;
+  refreshTimerId = setInterval(load, secs * 1000);
+}
+
+function applySettings(settings) {
+  appSettings = Object.assign({}, DEFAULT_UI_SETTINGS, settings || {});
+  applyTheme(appSettings.theme);
+  applyModuleVisibility(appSettings);
+  startRefresh(appSettings.refreshSeconds);
+  renderGoal(lastDataStore.data ? lastDataStore.data.summary.today : 0);
+}
+
+function renderGoal(todayMinutes) {
+  const bar = document.getElementById('goalBar');
+  const text = document.getElementById('goalText');
+  if (!bar || !text) return;
+  const goal = appSettings ? Number(appSettings.dailyGoalMinutes) || 0 : 0;
+  if (!goal) {
+    bar.style.display = 'none';
+    text.style.display = 'none';
+    return;
+  }
+  bar.style.display = '';
+  text.style.display = '';
+  const percent = Math.max(0, Math.min(100, Math.round(todayMinutes / goal * 100)));
+  bar.querySelector('i').style.width = percent + '%';
+  bar.classList.toggle('done', todayMinutes >= goal);
+  text.innerHTML = '今日目标 <b>' + fmtMinutes(goal) + '</b> · 已完成 <b>' + percent + '%</b>' +
+    (todayMinutes >= goal ? ' · 已达成' : '');
+}
+
+function renderReminder(reminder) {
+  const el = document.getElementById('reminderBar');
+  if (!el) return;
+  if (!reminder) {
+    el.classList.add('hidden');
+    return;
+  }
+  const key = reminder.process + '|' + reminder.since + '|' + reminder.minutes;
+  if (dismissedReminder === key) {
+    el.classList.add('hidden');
+    return;
+  }
+  el.innerHTML =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3.2 2"/></svg>' +
+    '<div><b>' + escHtml(reminder.name) + '</b> 从 ' + escHtml(reminder.since) + ' 玩到现在,已经 ' + fmtMinutes(reminder.minutes) + ',起来喝口水活动一下吧。</div>' +
+    '<button class="reminder-close" type="button" aria-label="忽略提醒">×</button>';
+  el.classList.remove('hidden');
+  el.querySelector('.reminder-close').addEventListener('click', () => {
+    dismissedReminder = key;
+    el.classList.add('hidden');
+  });
+}
+
+const settingsModal = document.getElementById('settingsModal');
+let pickedTheme = 'violet';
+
+function selectTheme(theme, preview) {
+  pickedTheme = ['violet', 'cyan', 'blue'].indexOf(theme) >= 0 ? theme : 'violet';
+  document.querySelectorAll('.theme-chip').forEach(chip => {
+    chip.classList.toggle('active', chip.dataset.theme === pickedTheme);
+  });
+  if (preview) applyTheme(pickedTheme);
+}
+
+function fillSettingsForm(state) {
+  const s = (state && state.settings) || DEFAULT_UI_SETTINGS;
+  document.getElementById('setGoal').value = s.dailyGoalMinutes;
+  document.getElementById('setRemind').value = s.remindMinutes;
+  document.getElementById('setMinSession').value = s.minSessionMinutes;
+  document.getElementById('setRefresh').value = String(s.refreshSeconds);
+  document.getElementById('setAutoBackup').checked = !!s.autoBackup;
+  const auto = document.getElementById('setAutostart');
+  auto.checked = !!(state && state.autostart);
+  auto.disabled = !(state && state.canAutostart);
+  document.querySelectorAll('#setModules input').forEach(box => {
+    box.checked = s[moduleFlag(box.dataset.module)] !== false;
+  });
+  selectTheme(s.theme, true);
+  document.getElementById('setDataPath').textContent = (state && state.dataFile) || '--';
+  const hint = document.getElementById('backupHint');
+  if (state && state.backups) hint.textContent = '已有 ' + state.backups + ' 份备份 · 最近一份 ' + state.lastBackup;
+  else hint.textContent = '还没有备份,点"立即备份"可以马上存一份。';
+  document.getElementById('settingsError').textContent = '';
+  if (!state || !state.canAutostart) {
+    document.getElementById('settingsError').textContent = '';
+  }
+}
+
+async function openSettings() {
+  settingsModal.classList.remove('hidden');
+  try {
+    const res = await fetch('/api/settings?_=' + Date.now());
+    fillSettingsForm(await res.json());
+  } catch (e) {
+    document.getElementById('settingsError').textContent = '读取设置失败,请稍后再试。';
+  }
+}
+
+function closeSettings() {
+  settingsModal.classList.add('hidden');
+  applyTheme(appSettings ? appSettings.theme : 'violet');
+}
+
+document.getElementById('settingsBtn').addEventListener('click', openSettings);
+document.getElementById('closeSettingsBtn').addEventListener('click', closeSettings);
+document.getElementById('cancelSettingsBtn').addEventListener('click', closeSettings);
+settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal) closeSettings(); });
+document.querySelectorAll('.theme-chip').forEach(chip => {
+  chip.addEventListener('click', () => selectTheme(chip.dataset.theme, true));
+});
+
+document.getElementById('saveSettingsBtn').addEventListener('click', async () => {
+  const errorEl = document.getElementById('settingsError');
+  const btn = document.getElementById('saveSettingsBtn');
+  errorEl.textContent = '';
+  const minSessionRaw = Number(document.getElementById('setMinSession').value);
+  const payload = {
+    minSessionMinutes: Number.isFinite(minSessionRaw) && minSessionRaw >= 0 ? minSessionRaw : 1,
+    dailyGoalMinutes: Number(document.getElementById('setGoal').value) || 0,
+    remindMinutes: Number(document.getElementById('setRemind').value) || 0,
+    refreshSeconds: Number(document.getElementById('setRefresh').value) || 5,
+    theme: pickedTheme,
+    autostart: document.getElementById('setAutostart').checked,
+    autoBackup: document.getElementById('setAutoBackup').checked
+  };
+  document.querySelectorAll('#setModules input').forEach(box => {
+    payload[moduleFlag(box.dataset.module)] = box.checked;
+  });
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const json = await res.json();
+    if (json.error) throw new Error(json.error);
+    applySettings(json.settings);
+    fillSettingsForm(json);
+    settingsModal.classList.add('hidden');
+    load();
+  } catch (e) {
+    errorEl.textContent = e.message || '保存失败';
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('backupNowBtn').addEventListener('click', async () => {
+  const hint = document.getElementById('backupHint');
+  hint.textContent = '备份中...';
+  try {
+    const res = await fetch('/api/backup', { method: 'POST' });
+    const json = await res.json();
+    hint.textContent = json.error ? json.error : ('已备份:' + json.file + ' · 共 ' + json.backups + ' 份');
+  } catch (e) {
+    hint.textContent = '备份失败,请稍后再试。';
+  }
+});
+
+document.getElementById('openFolderBtn').addEventListener('click', () => {
+  fetch('/api/open-folder', { method: 'POST' }).catch(() => {});
+});
+
+async function initSettings() {
+  try {
+    const cached = localStorage.getItem('gtt-theme');
+    if (cached) applyTheme(cached);
+  } catch (e) { /* ignore */ }
+  applySettings(DEFAULT_UI_SETTINGS);
+  try {
+    const res = await fetch('/api/settings?_=' + Date.now());
+    const state = await res.json();
+    if (state && state.settings) applySettings(state.settings);
+  } catch (e) { /* 用默认设置 */ }
+  load();
+}
+
+initSettings();
+</script>
+</body>
+</html>

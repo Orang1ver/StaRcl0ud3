@@ -1,0 +1,7 @@
+{
+  "name": "game-time-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local game time tracker and dashboard",
+  "bin": "dashboard-server.js"
+}

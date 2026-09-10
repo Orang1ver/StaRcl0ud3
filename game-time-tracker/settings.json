@@ -1,0 +1,13 @@
+{
+  "dailyGoalMinutes": 120,
+  "remindMinutes": 60,
+  "minSessionMinutes": 1,
+  "theme": "violet",
+  "refreshSeconds": 5,
+  "showSessions": true,
+  "showTrend": true,
+  "showCalendar": true,
+  "showGames": true,
+  "showDays": true,
+  "autoBackup": true
+}

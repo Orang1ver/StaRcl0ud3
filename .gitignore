@@ -1,0 +1,19 @@
+# ---- 通用 ----
+*.log
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# ---- game-time-tracker ----
+# 可执行文件（每个 90MB+，用 GitHub Release 附件发布，不要进仓库）
+GameTimeTracker*.exe
+
+# 运行时产生的数据、备份与构建产物
+activity.csv
+backups/
+backup-*/
+sea-prep.blob
+
+# ---- mihoyo-daily-reminder ----
+# 本机打卡历史
+history.json

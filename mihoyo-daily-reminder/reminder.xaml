@@ -1,0 +1,534 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="米哈游每日提醒"
+        Width="560"
+        SizeToContent="Height"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen"
+        Topmost="True"
+        ShowInTaskbar="True"
+        FontFamily="Microsoft YaHei UI"
+        TextOptions.TextFormattingMode="Display"
+        UseLayoutRounding="True">
+
+    <Window.Resources>
+        <Style x:Key="GhostButton" TargetType="{x:Type Button}">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#FFB7C2DE"/>
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Grid>
+                            <Border x:Name="Bd"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="8"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"/>
+                            </Border>
+                            <Border x:Name="FocusRing" CornerRadius="8" BorderThickness="2"
+                                    BorderBrush="Transparent" IsHitTestVisible="False"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#1CFFFFFF"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#30FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="FocusRing" Property="BorderBrush" Value="#FFFFD98A"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="CloseButton" TargetType="{x:Type Button}">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#FFA9B4D4"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Grid>
+                            <Border x:Name="Bd"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="9">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"/>
+                            </Border>
+                            <Border x:Name="FocusRing" CornerRadius="9" BorderThickness="2"
+                                    BorderBrush="Transparent" IsHitTestVisible="False"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#26FFFFFF"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="FocusRing" Property="BorderBrush" Value="#FFFFD98A"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PrimaryButton" TargetType="{x:Type Button}">
+            <Setter Property="Background" Value="#FFF2C463"/>
+            <Setter Property="Foreground" Value="#FF1A202E"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Grid>
+                            <Border x:Name="Bd"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="12">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"/>
+                            </Border>
+                            <Border x:Name="FocusRing" CornerRadius="12" BorderThickness="2"
+                                    BorderBrush="Transparent" IsHitTestVisible="False"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Opacity" Value="0.9"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Opacity" Value="0.72"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="FocusRing" Property="BorderBrush" Value="#FF3A2600"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Border Margin="18"
+            CornerRadius="22"
+            BorderThickness="1"
+            BorderBrush="#30FFFFFF">
+        <Border.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#FF343B5F" Offset="0"/>
+                <GradientStop Color="#FF1C2034" Offset="1"/>
+            </LinearGradientBrush>
+        </Border.Background>
+
+        <Grid>
+            <Grid Margin="26,22,26,22">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+    
+                <!-- 头部 -->
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+    
+                    <StackPanel>
+                        <Border Background="#26F3C766"
+                                CornerRadius="6"
+                                Padding="9,4"
+                                HorizontalAlignment="Left">
+                            <TextBlock Text="每日 23:30 · 例行检查"
+                                       FontSize="10.5"
+                                       Foreground="#FFFFDE9E"/>
+                        </Border>
+                        <TextBlock Text="米哈游每日提醒"
+                                   Margin="0,9,0,0"
+                                   FontSize="21"
+                                   FontWeight="Bold"
+                                   Foreground="White"/>
+                        <TextBlock Text="原神 · 星穹铁道 · 绝区零 的每日任务和体力清了吗？"
+                                   Margin="0,4,0,0"
+                                   FontSize="12"
+                                   Foreground="#FFB7C2DE"/>
+                    </StackPanel>
+    
+                    <Button x:Name="CloseButton"
+                            Grid.Column="1"
+                            Width="34"
+                            Height="34"
+                            Style="{StaticResource CloseButton}"
+                            Content="✕"
+                            VerticalAlignment="Top"/>
+                </Grid>
+    
+                <!-- 三张游戏卡片 -->
+                <StackPanel Grid.Row="1" Margin="0,18,0,0">
+                    <Border x:Name="Card0"
+                            Height="72"
+                            Margin="0,0,0,10"
+                            CornerRadius="15"
+                            Background="#15FFFFFF"
+                            BorderBrush="#14FFFFFF"
+                            BorderThickness="1"
+                            Cursor="Hand"
+                            Padding="14,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="IconCircle0"
+                                    Width="44"
+                                    Height="44"
+                                    CornerRadius="22"
+                                    Background="#2E6FE3C1"
+                                    VerticalAlignment="Center">
+                                <TextBlock x:Name="IconText0"
+                                           Text="原"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           FontSize="17"
+                                           FontWeight="SemiBold"
+                                           Foreground="#FF9CF3D6"/>
+                            </Border>
+                            <StackPanel Grid.Column="1"
+                                        Margin="14,0,8,0"
+                                        VerticalAlignment="Center">
+                                <TextBlock Text="原神"
+                                           FontSize="15"
+                                           FontWeight="SemiBold"
+                                           Foreground="White"/>
+                                <TextBlock x:Name="StatusText0"
+                                           Text="还没清完 · 点卡片标记完成"
+                                           Margin="0,3,0,0"
+                                           FontSize="11.5"
+                                           Foreground="#FFB7C2DE"/>
+                            </StackPanel>
+                            <Border x:Name="RingBorder0"
+                                    Grid.Column="2"
+                                    Width="28"
+                                    Height="28"
+                                    CornerRadius="14"
+                                    Background="Transparent"
+                                    BorderBrush="#66FFFFFF"
+                                    BorderThickness="1.5"
+                                    VerticalAlignment="Center">
+                                <TextBlock x:Name="RingText0"
+                                           Text="?"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           FontSize="11.5"
+                                           FontWeight="Bold"
+                                           Foreground="#FFD8E0F2"/>
+                            </Border>
+                        </Grid>
+                    </Border>
+    
+                    <Border x:Name="Card1"
+                            Height="72"
+                            Margin="0,0,0,10"
+                            CornerRadius="15"
+                            Background="#15FFFFFF"
+                            BorderBrush="#14FFFFFF"
+                            BorderThickness="1"
+                            Cursor="Hand"
+                            Padding="14,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="IconCircle1"
+                                    Width="44"
+                                    Height="44"
+                                    CornerRadius="22"
+                                    Background="#317DB4FF"
+                                    VerticalAlignment="Center">
+                                <TextBlock x:Name="IconText1"
+                                           Text="星"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           FontSize="17"
+                                           FontWeight="SemiBold"
+                                           Foreground="#FFB9D7FF"/>
+                            </Border>
+                            <StackPanel Grid.Column="1"
+                                        Margin="14,0,8,0"
+                                        VerticalAlignment="Center">
+                                <TextBlock Text="崩坏：星穹铁道"
+                                           FontSize="15"
+                                           FontWeight="SemiBold"
+                                           Foreground="White"/>
+                                <TextBlock x:Name="StatusText1"
+                                           Text="还没清完 · 点卡片标记完成"
+                                           Margin="0,3,0,0"
+                                           FontSize="11.5"
+                                           Foreground="#FFB7C2DE"/>
+                            </StackPanel>
+                            <Border x:Name="RingBorder1"
+                                    Grid.Column="2"
+                                    Width="28"
+                                    Height="28"
+                                    CornerRadius="14"
+                                    Background="Transparent"
+                                    BorderBrush="#66FFFFFF"
+                                    BorderThickness="1.5"
+                                    VerticalAlignment="Center">
+                                <TextBlock x:Name="RingText1"
+                                           Text="?"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           FontSize="11.5"
+                                           FontWeight="Bold"
+                                           Foreground="#FFD8E0F2"/>
+                            </Border>
+                        </Grid>
+                    </Border>
+    
+                    <Border x:Name="Card2"
+                            Height="72"
+                            CornerRadius="15"
+                            Background="#15FFFFFF"
+                            BorderBrush="#14FFFFFF"
+                            BorderThickness="1"
+                            Cursor="Hand"
+                            Padding="14,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="IconCircle2"
+                                    Width="44"
+                                    Height="44"
+                                    CornerRadius="22"
+                                    Background="#2EFFD37E"
+                                    VerticalAlignment="Center">
+                                <TextBlock x:Name="IconText2"
+                                           Text="绝"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           FontSize="17"
+                                           FontWeight="SemiBold"
+                                           Foreground="#FFFFE3A4"/>
+                            </Border>
+                            <StackPanel Grid.Column="1"
+                                        Margin="14,0,8,0"
+                                        VerticalAlignment="Center">
+                                <TextBlock Text="绝区零"
+                                           FontSize="15"
+                                           FontWeight="SemiBold"
+                                           Foreground="White"/>
+                                <TextBlock x:Name="StatusText2"
+                                           Text="还没清完 · 点卡片标记完成"
+                                           Margin="0,3,0,0"
+                                           FontSize="11.5"
+                                           Foreground="#FFB7C2DE"/>
+                            </StackPanel>
+                            <Border x:Name="RingBorder2"
+                                    Grid.Column="2"
+                                    Width="28"
+                                    Height="28"
+                                    CornerRadius="14"
+                                    Background="Transparent"
+                                    BorderBrush="#66FFFFFF"
+                                    BorderThickness="1.5"
+                                    VerticalAlignment="Center">
+                                <TextBlock x:Name="RingText2"
+                                           Text="?"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           FontSize="11.5"
+                                           FontWeight="Bold"
+                                           Foreground="#FFD8E0F2"/>
+                            </Border>
+                        </Grid>
+                    </Border>
+                </StackPanel>
+    
+                <!-- 底部按钮 -->
+                <StackPanel Grid.Row="2" Margin="0,10,0,0">
+                    <Button x:Name="LaunchButton"
+                            Height="46"
+                            IsDefault="True"
+                            Style="{StaticResource PrimaryButton}"
+                            Content="启动未完成的游戏"/>
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Center"
+                                Margin="0,9,0,0">
+                        <Button x:Name="DoneButton"
+                                Style="{StaticResource GhostButton}"
+                                Content="全部完成退出"/>
+                        <TextBlock Text=" · "
+                                   Margin="4,0"
+                                   Foreground="#FFA6B1CE"
+                                   VerticalAlignment="Center"
+                                   FontSize="12"/>
+                        <Button x:Name="SnoozeButton"
+                                Style="{StaticResource GhostButton}"
+                                Content="10 分钟后提醒"/>
+                        <TextBlock Text=" · "
+                                   Margin="4,0"
+                                   Foreground="#FFA6B1CE"
+                                   VerticalAlignment="Center"
+                                   FontSize="12"/>
+                        <Button x:Name="StatsButton"
+                                Style="{StaticResource GhostButton}"
+                                Content="打卡记录"/>
+                    </StackPanel>
+                    <TextBlock x:Name="StreakText"
+                               Margin="0,10,0,0"
+                               HorizontalAlignment="Center"
+                               FontSize="11.5"
+                               Foreground="#FFFFD98A"
+                               Visibility="Collapsed"
+                               Text="连续打卡 0 天"/>
+                </StackPanel>
+            </Grid>
+            <!-- 全部完成庆祝层 -->
+            <Grid x:Name="CelebrationLayer"
+                  Visibility="Collapsed"
+                  Panel.ZIndex="50">
+                <Border CornerRadius="22" Background="#F7141928"/>
+                <Canvas x:Name="ConfettiCanvas"
+                        IsHitTestVisible="False"
+                        ClipToBounds="True"/>
+
+                <Border x:Name="CelebrationCard"
+                        Margin="30,34,30,34"
+                        CornerRadius="20"
+                        BorderThickness="1"
+                        BorderBrush="#59FFD98A"
+                        VerticalAlignment="Center"
+                        RenderTransformOrigin="0.5,0.5">
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                            <GradientStop Color="#FF3B3563" Offset="0"/>
+                            <GradientStop Color="#FF241F36" Offset="0.55"/>
+                            <GradientStop Color="#FF3A2C1B" Offset="1"/>
+                        </LinearGradientBrush>
+                    </Border.Background>
+                    <Border.Effect>
+                        <DropShadowEffect Color="#FFFFD98A" BlurRadius="26" ShadowDepth="0" Opacity="0.35"/>
+                    </Border.Effect>
+
+                    <StackPanel Margin="22,20,22,20">
+                        <Border Background="#33FFD37E"
+                                CornerRadius="8"
+                                Padding="11,4"
+                                HorizontalAlignment="Center">
+                            <TextBlock x:Name="StreakTagText"
+                                       Text="今日打卡"
+                                       FontSize="11"
+                                       FontWeight="SemiBold"
+                                       Foreground="#FFFFE3A4"/>
+                        </Border>
+
+                        <Border x:Name="MedalRing"
+                                Width="88"
+                                Height="88"
+                                CornerRadius="44"
+                                Margin="0,16,0,0"
+                                HorizontalAlignment="Center"
+                                BorderThickness="2"
+                                BorderBrush="#FFFFD98A"
+                                RenderTransformOrigin="0.5,0.5">
+                            <Border.Background>
+                                <RadialGradientBrush>
+                                    <GradientStop Color="#FFFFE7B0" Offset="0"/>
+                                    <GradientStop Color="#FFF2B93F" Offset="1"/>
+                                </RadialGradientBrush>
+                            </Border.Background>
+                            <TextBlock x:Name="MedalText"
+                                       Text="✓"
+                                       FontSize="42"
+                                       FontWeight="Bold"
+                                       Foreground="#FF3A2600"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+                        </Border>
+
+                        <TextBlock x:Name="CelebrationTitle"
+                                   Text="今日全部完成！"
+                                   Margin="0,16,0,0"
+                                   FontSize="23"
+                                   FontWeight="Bold"
+                                   Foreground="White"
+                                   HorizontalAlignment="Center"/>
+
+                        <TextBlock x:Name="CelebrationSubtitle"
+                                   Margin="0,8,0,0"
+                                   FontSize="12.5"
+                                   Foreground="#FFC9D3EE"
+                                   TextWrapping="Wrap"
+                                   TextAlignment="Center"
+                                   HorizontalAlignment="Center"/>
+
+                        <Border Margin="0,16,0,0"
+                                CornerRadius="12"
+                                Background="#1FFFFFFF"
+                                BorderBrush="#26FFFFFF"
+                                BorderThickness="1"
+                                Padding="14,10">
+                            <StackPanel>
+                                <TextBlock x:Name="CelebrationStats"
+                                           FontSize="12"
+                                           Foreground="#FFFFDE9E"
+                                           HorizontalAlignment="Center"/>
+                                <TextBlock x:Name="CelebrationReward"
+                                           Margin="0,4,0,0"
+                                           FontSize="11.5"
+                                           Foreground="#FF9CF3D6"
+                                           HorizontalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Button x:Name="CelebrationAcceptButton"
+                                Height="44"
+                                Margin="0,18,0,0"
+                                IsDefault="True"
+                                Style="{StaticResource PrimaryButton}"
+                                Content="收下祝福"/>
+
+                        <StackPanel Orientation="Horizontal"
+                                    Margin="0,6,0,0"
+                                    HorizontalAlignment="Center">
+                            <Button x:Name="CelebrationStatsButton"
+                                    Style="{StaticResource GhostButton}"
+                                    Content="打卡记录"/>
+                            <TextBlock Text=" · "
+                                       Margin="4,0"
+                                       Foreground="#FFA6B1CE"
+                                       VerticalAlignment="Center"
+                                       FontSize="12"/>
+                            <Button x:Name="CelebrationBackButton"
+                                    Style="{StaticResource GhostButton}"
+                                    Content="回去再检查一下"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

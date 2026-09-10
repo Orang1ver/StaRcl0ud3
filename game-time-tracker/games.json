@@ -1,0 +1,18 @@
+{
+  "yuanshen": {
+    "name": "原神",
+    "avatar": "avatar_yuanshen.png"
+  },
+  "cs2": {
+    "name": "Counter-Strike 2",
+    "avatar": "avatar_cs2.png"
+  },
+  "starrail": {
+    "name": "崩坏：星穹铁道",
+    "avatar": "avatar_starrail.png"
+  },
+  "zenlesszonezero": {
+    "name": "绝区零",
+    "avatar": "avatar_zenlesszonezero.png"
+  }
+}

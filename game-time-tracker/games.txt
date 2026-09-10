@@ -1,0 +1,18 @@
+# Put one game process name per line here (without .exe).
+#
+# While a game is running, open Task Manager (Ctrl+Shift+Esc),
+# go to the Details tab, and copy the game's process name.
+#
+# The tracker counts time whenever a process on this list is running:
+# foreground, minimized, or idle all count.
+#
+# Edit this file BEFORE starting the tracker, then restart the tracker
+# for changes to take effect.
+#
+# miHoYo games (edit freely; one name per line, no .exe):
+YuanShen
+GenshinImpact
+StarRail
+ZenlessZoneZero
+minecraft
+cs2
