@@ -47,6 +47,41 @@
 
 在桌面程序里标记过「全部完成」的日子，晚上不会重复弹窗。
 
+### 游戏关掉之后回来找你（看门进程）
+
+点「启动游戏」之后弹出的**启动结果**窗口底下多了三个选项：
+
+| 选项 | 效果 |
+| --- | --- |
+| 重新弹这个提醒，让我确认一下（默认） | 你打完关掉游戏，过一会儿提醒弹窗会自己再出来，顺手打个勾就行 |
+| 直接打开桌面程序 | 打完直接把桌面程序唤到前台，你在里面标记 |
+| 不用管，我自己记 | 不盯着，跟以前一样 |
+
+选择会记在 `watch.json` 里，下次默认还是它。
+
+它是怎么判断「打完了」的：点启动游戏时会起一个**独立的小进程**（`watch-games.ps1`），每 15 秒看一眼那几个游戏进程还在不在。
+
+- 先等你游戏真的起来（最多等 3 分钟，防止点了启动又取消）；
+- 要**连续两次**都看不到进程才算退干净（游戏自己重启的那一瞬间不会误判）；
+- 这次游戏至少跑了 90 秒才算数，启动失败不会误触发；
+- 最多盯 6 小时，超时就不管了；
+- 同一时间只会有一个这样的进程（有锁文件），重复点启动也没事。
+
+这些数字都能改，写在同一目录的 `watch.json` 里（`mode` = `ask` / `app` / `none`）：
+
+```jsonc
+{
+  "enabled": true,
+  "mode": "ask",        // ask = 重新弹提醒 / app = 打开桌面程序 / none = 不盯
+  "maxHours": 6,        // 最多盯几小时
+  "minSeconds": 90,     // 这次游戏至少跑多少秒才算数
+  "pollSeconds": 15,    // 每几秒看一眼
+  "graceSeconds": 180   // 最多等游戏起来多少秒
+}
+```
+
+想看它到底干了啥，翻日志：`%TEMP%\mihoyo-daily-reminder.log`。
+
 ### 注册 / 修改 / 删除计划任务
 
 ```powershell
@@ -97,13 +132,16 @@ powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\daily-reminder.ps1 -F
 | `desktop-app.cmd` | 备用入口（万一 exe 跑不起来） |
 | `desktop-app.ps1` / `desktop-app.xaml` | 桌面程序逻辑 / 界面 |
 | `daily-reminder.ps1` / `reminder.xaml` | 23:30 的提醒弹窗逻辑 / 界面 |
+| `watch-games.ps1` | 看门进程：盯着游戏进程，退出后重新弹提醒 / 唤起桌面程序 |
 | `stats.xaml` | 打卡记录窗口界面（桌面程序和弹窗共用） |
-| `result.xaml` | 启动游戏后的结果窗口 |
+| `result.xaml` | 启动游戏后的结果窗口（在这里选「游戏关掉之后」怎么办） |
 | `lib.ps1` | 共用库：游戏路径发现与启动、打卡数据读写、统计、庆祝动画、计划任务注册 |
 | `setup.ps1` | 注册 / 查看 / 删除计划任务 |
 | `history.json` | 打卡记录（自动生成） |
+| `watch.json` | 看门设置（自动生成，第一次改选项时写入） |
 | `rewards.json` | 奖励规则：任务分值、连击、里程碑、商店（可直接改） |
 | `build\test-rewards.ps1` | 奖励引擎自检（39 项） |
+| `build\test-watch.ps1` | 看门进程自检（真起一个假游戏进程，等它退出，18 项） |
 | `assets\app.ico` / `assets\icon-preview.png` | 程序图标（多尺寸） / 各尺寸预览图 |
 | `build\make-icon.ps1` | 重新生成图标 |
 | `build\build-exe.ps1` + `build\Launcher.cs` | 重新编译 exe |
@@ -172,6 +210,9 @@ powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\daily-reminder.ps1 -F
 ```powershell
 # 用假数据验证奖励数学（不会碰你的记录）
 powershell -NoProfile -ExecutionPolicy Bypass -File .\build\test-rewards.ps1
+
+# 看门进程：真起一个假游戏进程，等它退出，确认该触发的时候才触发
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build\test-watch.ps1
 
 # 算一遍界面配色的对比度（改颜色后跑）
 powershell -NoProfile -ExecutionPolicy Bypass -File .\build\check-contrast.ps1

@@ -17,3 +17,5 @@ sea-prep.blob
 # ---- mihoyo-daily-reminder ----
 # 本机打卡历史
 history.json
+# 看门设置（游戏退出后怎么提醒，本机偏好）
+watch.json

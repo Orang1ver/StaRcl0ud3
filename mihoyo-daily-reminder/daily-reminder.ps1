@@ -20,6 +20,9 @@
 .PARAMETER DelaySeconds
   启动后先等待若干秒再弹窗（“稍后提醒”用的就是这个）。
 
+.PARAMETER NoRun
+  只加载函数、不真正跑（自检和调试用）。
+
 .EXAMPLE
   powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\daily-reminder.ps1
 .EXAMPLE
@@ -30,6 +33,7 @@ param(
     [switch]$CheckOnly,
     [switch]$CheckComplete,
     [switch]$Force,
+    [switch]$NoRun,
     [int]$SnoozeMinutes = 10,
     [int]$DelaySeconds = 0
 )
@@ -350,11 +354,23 @@ function Show-ReminderDialog {
 }
 
 function Show-LaunchResultDialog {
-    param($Results)
+    <#
+    启动结果窗口。顺便让用户选「游戏关掉之后怎么办」：
+      ask  = 重新弹这个提醒，让我确认（默认）
+      app  = 直接打开桌面程序
+      none = 不用管
+    返回最终选择，并写进 watch.json。
+    #>
+    param($Results, [string]$WatchMode = '')
 
-    if ($Results.Count -eq 0) {
-        return
+    $settings = Read-ReminderWatchSettings
+    if (-not $WatchMode) {
+        if ([bool]$settings.Enabled) { $WatchMode = [string]$settings.Mode } else { $WatchMode = 'none' }
     }
+    if ($WatchMode -notin @('ask', 'app', 'none')) { $WatchMode = 'ask' }
+    $script:watchChoice = $WatchMode
+
+    if ($Results.Count -eq 0) { return $WatchMode }
 
     Add-Type -AssemblyName PresentationFramework
     Add-Type -AssemblyName PresentationCore
@@ -384,6 +400,47 @@ function Show-LaunchResultDialog {
         $null = $messageRows.Children.Add($row)
     }
 
+    # ---- 游戏退出后的看门设置 ----
+    $divider = New-Object System.Windows.Controls.Border
+    $divider.Height = 1
+    $divider.Margin = New-Object System.Windows.Thickness(0, 6, 0, 12)
+    $divider.Background = New-UiBrush '#33FFFFFF'
+    $null = $messageRows.Children.Add($divider)
+
+    $watchTitle = New-Object System.Windows.Controls.TextBlock
+    $watchTitle.Text = '游戏关掉之后'
+    $watchTitle.FontSize = 12.5
+    $watchTitle.FontWeight = 'SemiBold'
+    $watchTitle.Foreground = New-UiBrush '#FFFFDE9E'
+    $null = $messageRows.Children.Add($watchTitle)
+
+    $watchHint = New-Object System.Windows.Controls.TextBlock
+    $watchHint.Text = '会盯着这次启动的游戏，等你全部退出之后：'
+    $watchHint.FontSize = 11.5
+    $watchHint.Margin = New-Object System.Windows.Thickness(0, 4, 0, 2)
+    $watchHint.Foreground = New-UiBrush '#FFB7C2DE'
+    $watchHint.TextWrapping = 'Wrap'
+    $null = $messageRows.Children.Add($watchHint)
+
+    foreach ($option in @(
+            @{ Text = '重新弹这个提醒，让我确认一下'; Value = 'ask' },
+            @{ Text = '直接打开桌面程序'; Value = 'app' },
+            @{ Text = '不用管，我自己记'; Value = 'none' })) {
+        $radio = New-Object System.Windows.Controls.RadioButton
+        $radio.Content = $option.Text
+        $radio.Tag = $option.Value
+        $radio.GroupName = 'WatchMode'
+        $radio.FontSize = 12.5
+        $radio.Margin = New-Object System.Windows.Thickness(0, 6, 0, 0)
+        $radio.Foreground = New-UiBrush '#FFD8E0F2'
+        if ($option.Value -eq $WatchMode) { $radio.IsChecked = $true }
+        $radio.Add_Checked({
+            param($sender, $eventArgs)
+            $script:watchChoice = [string]$sender.Tag
+        })
+        $null = $messageRows.Children.Add($radio)
+    }
+
     Enable-ReminderWindow -Window $window
 
     $okButton = $window.FindName('OKButton')
@@ -392,6 +449,15 @@ function Show-LaunchResultDialog {
     })
 
     $null = $window.ShowDialog()
+
+    if (-not $script:watchChoice) { $script:watchChoice = $WatchMode }
+    $saved = Read-ReminderWatchSettings
+    $saved.Enabled = ($script:watchChoice -ne 'none')
+    $saved.Mode = $script:watchChoice
+    $null = Save-ReminderWatchSettings -Settings $saved
+    Write-ReminderLog ('游戏退出后的处理方式：' + $script:watchChoice)
+
+    return $script:watchChoice
 }
 
 function Invoke-DailyReminder {
@@ -462,8 +528,21 @@ function Invoke-DailyReminder {
 
     if ($result.Choice -eq 'launch') {
         $launchResults = Start-MissingGames -Games $games -CheckedNames $result.Checked
-        Show-LaunchResultDialog -Results $launchResults
+        $watchMode = Show-LaunchResultDialog -Results $launchResults
+
+        # 起个看门进程：游戏退出之后回来提醒 / 直接唤起桌面程序
+        $watchNames = @()
+        foreach ($game in $games) {
+            if ($result.Checked -contains $game.Display) { continue }
+            if (-not $game.Found) { continue }
+            $watchNames += $game.ProcessName
+        }
+        if ($watchMode -and $watchMode -ne 'none' -and $watchNames.Count -gt 0) {
+            $null = Start-ReminderWatcher -ProcessNames $watchNames -Mode $watchMode
+        }
     }
 }
 
-Invoke-DailyReminder
+if (-not $NoRun) {
+    Invoke-DailyReminder
+}

@@ -708,6 +708,31 @@ function Complete-DesktopAll {
     Start-DesktopCelebration -DelayMs 260
 }
 
+function Start-DesktopGameWatcher {
+    <#
+    桌面程序里启动的游戏也一样要有人看着：你关掉游戏之后回来提醒 / 唤出程序。
+    设置跟 23:30 的弹窗共用一份 watch.json。
+    #>
+    param([string[]]$ProcessNames)
+
+    try {
+        $settings = Read-ReminderWatchSettings
+        if (-not [bool]$settings.Enabled) { return }
+        if ([string]$settings.Mode -eq 'none') { return }
+
+        $names = @()
+        foreach ($name in @($ProcessNames)) {
+            if ($name) { $names += [string]$name }
+        }
+        if ($names.Count -eq 0) { return }
+
+        $null = Start-ReminderWatcher -ProcessNames $names -Mode ([string]$settings.Mode)
+    }
+    catch {
+        Write-ReminderLog ('桌面程序：看门进程启动失败 ' + $_.Exception.Message)
+    }
+}
+
 function Start-DesktopGame {
     <# 点单张卡片的「启动」 #>
     param([int]$Index)
@@ -730,6 +755,7 @@ function Start-DesktopGame {
         Start-Process -FilePath $game.ExePath -WorkingDirectory $folder
         Show-DesktopToast -Text ('正在启动「{0}」，清完记得回来标记完成。' -f $game.Display) -Kind 'ok'
         Write-ReminderLog ('桌面程序：启动 ' + $game.Display)
+        Start-DesktopGameWatcher -ProcessNames @($game.ProcessName)
     }
     catch {
         Show-DesktopToast -Text ('「{0}」启动失败：{1}' -f $game.Display, $_.Exception.Message) -Kind 'fail'
@@ -763,6 +789,14 @@ function Invoke-DesktopLaunchMissing {
     $lines = @()
     foreach ($item in $results) { $lines += ('● ' + $item.Text) }
     Show-DesktopToast -Text ($lines -join '     ') -Kind $kind
+
+    $watchNames = @()
+    for ($i = 0; $i -lt @($script:games).Count; $i++) {
+        if ($script:states[$i]) { continue }
+        if (-not $script:games[$i].Found) { continue }
+        $watchNames += $script:games[$i].ProcessName
+    }
+    Start-DesktopGameWatcher -ProcessNames $watchNames
 
     Update-DesktopToday
     Start-DesktopRefresh -DelayMs 3000

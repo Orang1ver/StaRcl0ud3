@@ -1698,3 +1698,148 @@ function Remove-LastRewardRedemption {
     Write-ReminderLog ('撤销兑换：' + $last.Title)
     return $last
 }
+
+# ============================================================
+#  看门：游戏退出后回来提醒（M3）
+#  ------------------------------------------------------------
+#  弹窗里点了「启动游戏」之后，起一个独立的看门进程盯着这几个游戏进程：
+#  它们全部退出之后，要么重新弹提醒弹窗确认，要么直接把桌面程序唤到前台。
+#  设置存在 watch.json，弹窗的「启动结果」里可以直接改。
+# ============================================================
+
+function Get-ReminderWatchPaths {
+    $paths = New-Object System.Collections.Generic.List[string]
+    if ($PSScriptRoot) { $paths.Add((Join-Path $PSScriptRoot 'watch.json')) }
+    $paths.Add((Join-Path (Join-Path $env:APPDATA 'MiHoYoDailyReminder') 'watch.json'))
+    return $paths
+}
+
+function New-ReminderWatchSettings {
+    <# 默认：开启、打完后重新弹提醒确认 #>
+    return [pscustomobject]@{
+        Enabled      = $true
+        Mode         = 'ask'      # ask = 重新弹提醒确认 / app = 打开桌面程序 / none = 不管
+        MaxHours     = 6
+        MinSeconds   = 90
+        PollSeconds  = 15
+        GraceSeconds = 180
+        Path         = ''
+    }
+}
+
+function Read-ReminderWatchSettings {
+    param([string[]]$Paths)
+
+    if (-not $Paths) { $Paths = Get-ReminderWatchPaths }
+    $settings = New-ReminderWatchSettings
+
+    foreach ($p in $Paths) {
+        if (-not (Test-Path -LiteralPath $p)) { continue }
+        try {
+            $json = Get-Content -LiteralPath $p -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($null -ne $json.enabled) { $settings.Enabled = [bool]$json.enabled }
+            if ($json.mode) { $settings.Mode = [string]$json.mode }
+            if ($json.maxHours) { $settings.MaxHours = [int]$json.maxHours }
+            if ($json.minSeconds) { $settings.MinSeconds = [int]$json.minSeconds }
+            if ($json.pollSeconds) { $settings.PollSeconds = [int]$json.pollSeconds }
+            if ($json.graceSeconds) { $settings.GraceSeconds = [int]$json.graceSeconds }
+            $settings.Path = $p
+            break
+        }
+        catch {
+            Write-ReminderLog ('读取看门设置失败（' + $p + '）：' + $_.Exception.Message)
+        }
+    }
+
+    if (-not $settings.Path) { $settings.Path = $Paths[0] }
+    if ($settings.Mode -notin @('ask', 'app', 'none')) { $settings.Mode = 'ask' }
+    return $settings
+}
+
+function Save-ReminderWatchSettings {
+    param($Settings, [string]$Path)
+
+    if (-not $Settings) { return $null }
+    if (-not $Path) {
+        if ($Settings.Path) { $Path = $Settings.Path }
+        else { $Path = (Get-ReminderWatchPaths)[0] }
+    }
+
+    try {
+        $dir = Split-Path -Path $Path -Parent
+        if ($dir -and -not (Test-Path -LiteralPath $dir)) {
+            $null = New-Item -ItemType Directory -Path $dir -Force
+        }
+        $json = [pscustomobject]@{
+            _note        = '游戏退出后的看门设置：mode = ask（重新弹提醒确认）/ app（打开桌面程序）/ none（不管）'
+            enabled      = [bool]$Settings.Enabled
+            mode         = [string]$Settings.Mode
+            maxHours     = [int]$Settings.MaxHours
+            minSeconds   = [int]$Settings.MinSeconds
+            pollSeconds  = [int]$Settings.PollSeconds
+            graceSeconds = [int]$Settings.GraceSeconds
+        } | ConvertTo-Json
+        [System.IO.File]::WriteAllText($Path, $json, (New-Object System.Text.UTF8Encoding($false)))
+        $Settings.Path = $Path
+        return $Path
+    }
+    catch {
+        Write-ReminderLog ('保存看门设置失败：' + $_.Exception.Message)
+        return $null
+    }
+}
+
+function Get-ReminderAppPath {
+    <# 桌面程序入口：优先用打包好的 exe，没有就用 cmd #>
+    $exe = Join-Path $PSScriptRoot '米哈游每日助手.exe'
+    if (Test-Path -LiteralPath $exe) { return $exe }
+    $cmd = Join-Path $PSScriptRoot 'desktop-app.cmd'
+    if (Test-Path -LiteralPath $cmd) { return $cmd }
+    return $null
+}
+
+function Start-ReminderWatcher {
+    <#
+    起一个独立进程盯着这些游戏（弹窗脚本不等，免得一直占着计划任务的进程）。
+    返回刚起来的看门进程，起不来就返回 $null。
+    #>
+    param(
+        [string[]]$ProcessNames,
+        [string]$Mode = 'ask'
+    )
+
+    if (-not $ProcessNames -or @($ProcessNames).Count -eq 0) { return $null }
+    if (-not $Mode -or $Mode -eq 'none') { return $null }
+
+    $scriptPath = Join-Path $PSScriptRoot 'watch-games.ps1'
+    if (-not (Test-Path -LiteralPath $scriptPath)) {
+        Write-ReminderLog '找不到 watch-games.ps1，没法起看门进程'
+        return $null
+    }
+
+    $settings = Read-ReminderWatchSettings
+    $winPs = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $childArgs = @(
+        '-NoProfile',
+        '-STA',
+        '-WindowStyle', 'Hidden',
+        '-ExecutionPolicy', 'Bypass',
+        '-File', "`"$scriptPath`"",
+        '-ProcessNames', (@($ProcessNames) -join ','),
+        '-Mode', $Mode,
+        '-MaxHours', [string]([int]$settings.MaxHours),
+        '-MinSeconds', [string]([int]$settings.MinSeconds),
+        '-PollSeconds', [string]([int]$settings.PollSeconds),
+        '-GraceSeconds', [string]([int]$settings.GraceSeconds)
+    )
+
+    try {
+        $proc = Start-Process -FilePath $winPs -ArgumentList $childArgs -WindowStyle Hidden -PassThru
+        Write-ReminderLog ('看门进程已启动：盯 ' + (@($ProcessNames) -join '、') + '，退出后 ' + $Mode + '（PID ' + $proc.Id + '）')
+        return $proc
+    }
+    catch {
+        Write-ReminderLog ('看门进程启动失败：' + $_.Exception.Message)
+        return $null
+    }
+}
