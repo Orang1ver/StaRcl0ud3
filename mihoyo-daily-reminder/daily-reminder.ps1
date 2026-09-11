@@ -118,7 +118,11 @@ function Show-ReminderCelebration {
 
     $script:celebrationShown = $true
     $script:celebrationPending = $false
-    $stats = Show-ReminderCelebrationLayer -Window $Window -MarkComplete
+    $rules = Read-RewardRules
+    $data = Read-ReminderData
+    $reward = Get-RewardState -Rules $rules -Data $data
+    $gainText = '今日 +{0} 代币 · +{1} XP（倍率 ×{2}）' -f [int][Math]::Round($reward.TodayCoin), [int][Math]::Round($reward.TodayXp), $reward.TodayMultiplier
+    $stats = Show-ReminderCelebrationLayer -Window $Window -MarkComplete -GainText $gainText
     if ($stats) {
         Update-ReminderStreakLabel -Window $Window -Stats $stats
     }

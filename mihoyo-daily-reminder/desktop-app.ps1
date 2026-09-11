@@ -356,8 +356,10 @@ function Update-DesktopToday {
         $sideToday.Foreground = New-UiBrush '#FFFFFFFF'
     }
 
-    $window.FindName('SideStreakValue').Text = '{0} 天' -f $stats.Streak
-    $window.FindName('SideStreakNote').Text = '累计 {0} 天 · 称号「{1}」' -f $stats.Total, $stats.Title
+    $reward = Get-RewardState -Rules $script:rewards -Data $script:data -Today (Get-ReminderToday)
+    $window.FindName('SideStreakValue').Text = '{0} 天' -f $reward.Streak
+    $freezeLeft = $reward.FreezePerWeek - $reward.FreezeUsed
+    $window.FindName('SideStreakNote').Text = ('累计 {0} 天 · 称号「{1}」· 本周冻结还剩 {2}/{3}' -f $reward.TotalDays, $stats.Title, $freezeLeft, $reward.FreezePerWeek)
 
     Update-DesktopProgressBar
 }
@@ -431,16 +433,16 @@ function Set-DesktopPanel {
     if (-not $script:window) { return }
     $script:panel = $Name
 
-    $panels = @{ today = 'TodayPanel'; records = 'RecordsPanel'; settings = 'SettingsPanel' }
-    foreach ($key in @('today', 'records', 'settings')) {
+    $panels = @{ today = 'TodayPanel'; records = 'RecordsPanel'; rewards = 'RewardsPanel'; settings = 'SettingsPanel' }
+    foreach ($key in @('today', 'records', 'rewards', 'settings')) {
         $panel = $script:window.FindName($panels[$key])
         if (-not $panel) { continue }
         if ($key -eq $Name) { $panel.Visibility = 'Visible' }
         else { $panel.Visibility = 'Collapsed' }
     }
 
-    $buttons = @{ today = 'NavTodayButton'; records = 'NavRecordsButton'; settings = 'NavSettingsButton' }
-    foreach ($key in @('today', 'records', 'settings')) {
+    $buttons = @{ today = 'NavTodayButton'; records = 'NavRecordsButton'; rewards = 'NavRewardsButton'; settings = 'NavSettingsButton' }
+    foreach ($key in @('today', 'records', 'rewards', 'settings')) {
         $button = $script:window.FindName($buttons[$key])
         if (-not $button) { continue }
         if ($key -eq $Name) {
@@ -454,8 +456,216 @@ function Set-DesktopPanel {
     }
 
     if ($Name -eq 'records') { Refresh-DesktopRecords }
+    if ($Name -eq 'rewards') { Refresh-DesktopRewards }
     if ($Name -eq 'settings') { Refresh-DesktopSettings }
 }
+# ============================================================
+#  奖励中心：等级 / 代币 / 里程碑 / 商店
+# ============================================================
+function Update-DesktopXpBar {
+    <# 经验条宽度跟着卡片走 #>
+    if (-not $script:window) { return }
+    $bar = $script:window.FindName('XpBar')
+    if (-not $bar) { return }
+
+    $state = Get-RewardState -Rules $script:rewards -Data $script:data -Today (Get-ReminderToday)
+    $trackWidth = 0.0
+    if ($bar.Parent -and $bar.Parent.ActualWidth -gt 0) { $trackWidth = [double]$bar.Parent.ActualWidth }
+    $bar.Width = [Math]::Round($trackWidth * [double]$state.LevelProgress, 1)
+}
+
+function Refresh-DesktopRewards {
+    <# 把奖励中心整页画一遍 #>
+    if (-not $script:window) { return }
+    $window = $script:window
+    if (-not $script:rewards) { $script:rewards = Read-RewardRules }
+
+    $state = Get-RewardState -Rules $script:rewards -Data $script:data -Today (Get-ReminderToday)
+    $freezeLeft = $state.FreezePerWeek - $state.FreezeUsed
+
+    # 顶部一行：连续 / 最长 / 冻结
+    $nextMilestone = $null
+    foreach ($ms in $state.Milestones) {
+        if (-not $ms.Unlocked) { $nextMilestone = $ms; break }
+    }
+    $summary = '连续 {0} 天 · 最长 {1} 天 · 本周冻结还剩 {2}/{3}' -f $state.Streak, $state.BestStreak, $freezeLeft, $state.FreezePerWeek
+    if ($nextMilestone) {
+        $summary += ' · 再坚持 {0} 天解锁「{1}」' -f $nextMilestone.Remain, $nextMilestone.Title
+    }
+    else {
+        $summary += ' · 里程碑已全部解锁'
+    }
+    $window.FindName('RewardSummaryText').Text = $summary
+
+    # 等级
+    $window.FindName('LevelValue').Text = [string]$state.Level
+    $window.FindName('XpText').Text = '{0} / {1} XP　（累计 {2} XP）' -f $state.LevelInto, $state.LevelNeed, $state.Xp
+    Update-DesktopXpBar
+
+    # 代币
+    $window.FindName('CoinBalanceValue').Text = [string]$state.Balance
+    $window.FindName('CoinDetailText').Text = '累计赚 {0} · 已花 {1}' -f $state.CoinEarned, $state.CoinSpent
+
+    # 今天
+    $entry = $state.TodayEntry
+    if ($entry -and $entry.Complete) {
+        $window.FindName('TodayGainText').Foreground = New-UiBrush '#FF7FE0B2'
+        $window.FindName('TodayGainText').Text = '三款全清：+{0} 代币 · +{1} XP（连击倍率 ×{2}）' -f [int][Math]::Round($entry.Coin), [int][Math]::Round($entry.Xp), $entry.Multiplier
+    }
+    elseif ($entry -and $entry.Done -gt 0) {
+        $window.FindName('TodayGainText').Foreground = New-UiBrush '#FFFFDE9E'
+        $window.FindName('TodayGainText').Text = '已经清完 {0}/{1}：+{2} 代币 · +{3} XP；全部清完还有「全清奖励」' -f $entry.Done, $entry.Required, [int][Math]::Round($entry.Coin), [int][Math]::Round($entry.Xp)
+    }
+    else {
+        $window.FindName('TodayGainText').Foreground = New-UiBrush '#FFB7C2DE'
+        $window.FindName('TodayGainText').Text = '今天还没打卡。清完三款有 +45 代币 · +135 XP，连击越高倍率越高。'
+    }
+    $window.FindName('StreakDetailText').Text = '累计打卡 {0} 天 · 连击倍率 ×{1}（{2} 天封顶 2 倍）' -f $state.TotalDays, $state.TodayMultiplier, 100
+
+    # 里程碑
+    $milestones = $window.FindName('MilestonePanel')
+    $milestones.Children.Clear()
+    foreach ($ms in $state.Milestones) {
+        $chip = New-Object System.Windows.Controls.Border
+        $chip.CornerRadius = New-Object System.Windows.CornerRadius(12)
+        $chip.Padding = New-Object System.Windows.Thickness(14, 9, 14, 9)
+        $chip.Margin = New-Object System.Windows.Thickness(0, 0, 8, 8)
+        $chip.BorderThickness = New-Object System.Windows.Thickness(1)
+        if ($ms.Unlocked) {
+            $chip.Background = New-UiBrush '#40F2C463'
+            $chip.BorderBrush = New-UiBrush '#80FFD98A'
+        }
+        else {
+            $chip.Background = New-UiBrush '#26000000'
+            $chip.BorderBrush = New-UiBrush '#26FFFFFF'
+        }
+
+        $stack = New-Object System.Windows.Controls.StackPanel
+        $title = New-Object System.Windows.Controls.TextBlock
+        $title.Text = '{0} 天 · {1}' -f $ms.Days, $ms.Title
+        $title.FontSize = 12.5
+        $title.HorizontalAlignment = 'Center'
+        $title.Foreground = New-UiBrush $(if ($ms.Unlocked) { '#FFFFE3A4' } else { '#FFB7C2DE' })
+        $note = New-Object System.Windows.Controls.TextBlock
+        if ($ms.Unlocked) { $note.Text = '已解锁 · +{0} 代币' -f $ms.Coin }
+        else { $note.Text = '还差 {0} 天 · +{1} 代币' -f $ms.Remain, $ms.Coin }
+        $note.FontSize = 11
+        $note.Margin = New-Object System.Windows.Thickness(0, 3, 0, 0)
+        $note.HorizontalAlignment = 'Center'
+        $note.Foreground = New-UiBrush $(if ($ms.Unlocked) { '#FF7FE0B2' } else { '#FFA6B0CE' })
+        $null = $stack.Children.Add($title)
+        $null = $stack.Children.Add($note)
+        $chip.Child = $stack
+        $null = $milestones.Children.Add($chip)
+    }
+
+    # 商店
+    $shop = $window.FindName('ShopPanel')
+    $shop.Children.Clear()
+    foreach ($item in (Get-RewardShop -Rules $script:rewards)) {
+        $owned = ($item.Price -le $state.Balance)
+
+        $row = New-Object System.Windows.Controls.Border
+        $row.CornerRadius = New-Object System.Windows.CornerRadius(12)
+        $row.Background = New-UiBrush '#26000000'
+        $row.Padding = New-Object System.Windows.Thickness(14, 10, 14, 10)
+        $row.Margin = New-Object System.Windows.Thickness(0, 0, 0, 8)
+
+        $grid = New-Object System.Windows.Controls.Grid
+        $colA = New-Object System.Windows.Controls.ColumnDefinition
+        $colA.Width = New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Star)
+        $colB = New-Object System.Windows.Controls.ColumnDefinition
+        $colB.Width = New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Auto)
+        $null = $grid.ColumnDefinitions.Add($colA)
+        $null = $grid.ColumnDefinitions.Add($colB)
+
+        $text = New-Object System.Windows.Controls.StackPanel
+        $name = New-Object System.Windows.Controls.TextBlock
+        $name.Text = $item.Title
+        $name.FontSize = 13
+        $name.Foreground = New-UiBrush '#FFFFFFFF'
+        $price = New-Object System.Windows.Controls.TextBlock
+        $price.Text = '{0} 代币{1}' -f $item.Price, $(if ($owned) { '' } else { '（还差 ' + ($item.Price - $state.Balance) + '）' })
+        $price.FontSize = 11.5
+        $price.Margin = New-Object System.Windows.Thickness(0, 3, 0, 0)
+        $price.Foreground = New-UiBrush $(if ($owned) { '#FFFFDE9E' } else { '#FFA6B0CE' })
+        $null = $text.Children.Add($name)
+        $null = $text.Children.Add($price)
+
+        $button = New-Object System.Windows.Controls.Button
+        $button.Content = '兑换'
+        $button.Width = 78
+        $button.Height = 32
+        $button.Style = $window.FindResource('OutlineButton')
+        $button.Tag = $item.Id
+        $button.IsEnabled = $owned
+        $button.VerticalAlignment = 'Center'
+        $button.Add_Click({
+            param($sender, $eventArgs)
+            Invoke-DesktopRedeem -Id ([string]$sender.Tag)
+        })
+        [System.Windows.Controls.Grid]::SetColumn($button, 1)
+
+        $null = $grid.Children.Add($text)
+        $null = $grid.Children.Add($button)
+        $row.Child = $grid
+        $null = $shop.Children.Add($row)
+    }
+
+    # 最近兑换
+    $panel = $window.FindName('RedemptionPanel')
+    $panel.Children.Clear()
+    $history = @($script:data.Redemptions)
+    if ($history.Count -eq 0) {
+        $empty = New-Object System.Windows.Controls.TextBlock
+        $empty.Text = '还没有兑换记录。攒够代币点上面的「兑换」，这里会留下记录，点错了可以撤销。'
+        $empty.FontSize = 11.5
+        $empty.TextWrapping = 'Wrap'
+        $empty.Foreground = New-UiBrush '#FFA6B0CE'
+        $null = $panel.Children.Add($empty)
+    }
+    else {
+        foreach ($record in @($history | Select-Object -Last 5 | Sort-Object { $_.At } -Descending)) {
+            $line = New-Object System.Windows.Controls.TextBlock
+            $when = ''
+            try { $when = ([datetime]$record.At).ToString('MM-dd HH:mm') } catch { $when = [string]$record.At }
+            $line.Text = '· {0}　{1} 代币　{2}' -f $record.Title, $record.Price, $when
+            $line.FontSize = 11.5
+            $line.Margin = New-Object System.Windows.Thickness(0, 0, 0, 4)
+            $line.Foreground = New-UiBrush '#FFB7C2DE'
+            $null = $panel.Children.Add($line)
+        }
+    }
+    $window.FindName('UndoRedeemButton').IsEnabled = ($history.Count -gt 0)
+}
+
+function Invoke-DesktopRedeem {
+    param([string]$Id)
+
+    try {
+        $item = Add-RewardRedemption -Data $script:data -Rules $script:rewards -Id $Id
+        $left = (Get-RewardState -Rules $script:rewards -Data $script:data -Today (Get-ReminderToday)).Balance
+        Show-DesktopToast -Text ('兑换了「{0}」，还剩 {1} 代币。' -f $item.Title, $left) -Kind 'ok'
+    }
+    catch {
+        Show-DesktopToast -Text ([string]$_.Exception.Message) -Kind 'fail'
+    }
+    Refresh-DesktopRewards
+    Update-DesktopToday
+}
+
+function Invoke-DesktopUndoRedeem {
+    $last = Remove-LastRewardRedemption -Data $script:data
+    if ($last) {
+        Show-DesktopToast -Text ('已撤销「{0}」，退回 {1} 代币。' -f $last.Title, $last.Price) -Kind 'skip'
+    }
+    else {
+        Show-DesktopToast -Text '没有可撤销的兑换记录。' -Kind 'skip'
+    }
+    Refresh-DesktopRewards
+    Update-DesktopToday
+}
+
 
 # ============================================================
 #  交互动作
@@ -483,6 +693,7 @@ function Switch-DesktopGame {
     }
 
     if ($script:panel -eq 'records') { Refresh-DesktopRecords }
+    if ($script:panel -eq 'rewards') { Refresh-DesktopRewards }
     if ($script:panel -eq 'settings') { Refresh-DesktopSettings }
 }
 
@@ -492,6 +703,7 @@ function Complete-DesktopAll {
     $null = Set-ReminderDayComplete -Data $script:data -Date $script:todayKey
     Update-DesktopToday
     if ($script:panel -eq 'records') { Refresh-DesktopRecords }
+    if ($script:panel -eq 'rewards') { Refresh-DesktopRewards }
     if ($script:panel -eq 'settings') { Refresh-DesktopSettings }
     Start-DesktopCelebration -DelayMs 260
 }
@@ -609,7 +821,10 @@ function Show-DesktopCelebration {
     if ($script:celebrated) { return }
     $script:celebrated = $true
 
-    $stats = Show-ReminderCelebrationLayer -Window $script:window -MarkComplete
+    $reward = Get-RewardState -Rules $script:rewards -Data $script:data -Today (Get-ReminderToday)
+    $gainText = '今日 +{0} 代币 · +{1} XP（倍率 ×{2}）' -f [int][Math]::Round($reward.TodayCoin), [int][Math]::Round($reward.TodayXp), $reward.TodayMultiplier
+
+    $stats = Show-ReminderCelebrationLayer -Window $script:window -MarkComplete -GainText $gainText
     if ($stats) {
         Write-ReminderLog ('桌面程序：今天全部完成，连续 {0} 天，累计 {1} 天' -f $stats.Streak, $stats.Total)
     }
@@ -617,6 +832,7 @@ function Show-DesktopCelebration {
     $script:data = Read-ReminderData
     Update-DesktopToday
     if ($script:panel -eq 'records') { Refresh-DesktopRecords }
+    if ($script:panel -eq 'rewards') { Refresh-DesktopRewards }
     if ($script:panel -eq 'settings') { Refresh-DesktopSettings }
 }
 
@@ -814,6 +1030,7 @@ function New-DesktopWindow {
     $script:todayKey = (Get-ReminderToday).ToString('yyyy-MM-dd')
     $script:games = @(Get-GameList)
     $script:data = Read-ReminderData
+    $script:rewards = Read-RewardRules
 
     $marked = @(Get-ReminderDayGames -Data $script:data -Date $script:todayKey)
     $script:states = New-Object bool[] @($script:games).Count
@@ -855,7 +1072,7 @@ function New-DesktopWindow {
     }
 
     # ---- 左侧导航 ----
-    foreach ($pair in @(@('NavTodayButton', 'today'), @('NavRecordsButton', 'records'), @('NavSettingsButton', 'settings'))) {
+    foreach ($pair in @(@('NavTodayButton', 'today'), @('NavRecordsButton', 'records'), @('NavRewardsButton', 'rewards'), @('NavSettingsButton', 'settings'))) {
         $button = $window.FindName($pair[0])
         $button.Tag = $pair[1]
         $button.Add_Click({
@@ -963,6 +1180,12 @@ function New-DesktopWindow {
         $script:window.Close()
     })
 
+    # ---- 奖励中心：撤销兑换 ----
+    $window.FindName('UndoRedeemButton').Add_Click({
+        param($sender, $eventArgs)
+        Invoke-DesktopUndoRedeem
+    })
+
     # ---- Esc：有庆祝层先收起来，否则关窗（弹层的退出通道） ----
     $window.Add_PreviewKeyDown({
         param($sender, $eventArgs)
@@ -986,6 +1209,13 @@ function New-DesktopWindow {
         $track.Add_SizeChanged({
             param($sender, $eventArgs)
             Update-DesktopProgressBar
+        })
+    }
+    $xpTrack = $window.FindName('XpBar').Parent
+    if ($xpTrack) {
+        $xpTrack.Add_SizeChanged({
+            param($sender, $eventArgs)
+            Update-DesktopXpBar
         })
     }
     $window.Add_Loaded({

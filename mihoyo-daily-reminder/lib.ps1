@@ -27,17 +27,19 @@ function Get-ReminderDataPaths {
 
 function Read-ReminderData {
     <#
-    读取打卡数据（v2）。老版本只有 dates 数组，这里会自动迁移成“三款全部完成”。
-    返回对象：@{ Version; Days = @{ 'yyyy-MM-dd' = @('原神', ...) }; Path }
+    读取打卡数据（v3）。老版本只有 dates 数组，这里会自动迁移成“三款全部完成”。
+    返回对象：@{ Version; Days = @{ 'yyyy-MM-dd' = @('原神', ...) }; Redemptions; Path }
+    Redemptions 是奖励商店的兑换记录（代币余额由它算出来）。
     #>
     param([string[]]$Paths)
 
     if (-not $Paths) { $Paths = Get-ReminderDataPaths }
 
     $result = [pscustomobject]@{
-        Version = 2
-        Days    = @{}
-        Path    = $null
+        Version     = 3
+        Days        = @{}
+        Redemptions = @()
+        Path        = $null
     }
 
     foreach ($p in $Paths) {
@@ -70,6 +72,18 @@ function Read-ReminderData {
             }
 
             $result.Days = $days
+            $redemptions = @()
+            if ($json -and $json.PSObject.Properties['redemptions'] -and $json.redemptions) {
+                foreach ($r in @($json.redemptions)) {
+                    $redemptions += [pscustomobject]@{
+                        Id    = [string]$r.id
+                        Title = [string]$r.title
+                        Price = [int]$r.price
+                        At    = [string]$r.at
+                    }
+                }
+            }
+            $result.Redemptions = @($redemptions)
             $result.Path = $p
             return $result
         }
@@ -87,15 +101,35 @@ function Save-ReminderData {
 
     if (-not $Data) { return $null }
 
+    # 安全阀：只认「从文件里读出来的」数据。
+    # 手工构造的假数据（比如测试里造的）没有 Path，绝对不能让它落到真实记录上——
+    # 之前就因为这个，测试数据把真实打卡记录覆盖过一次。
+    if (-not $Data.PSObject.Properties['Path'] -or [string]::IsNullOrWhiteSpace([string]$Data.Path)) {
+        Write-ReminderLog '拒绝保存：这份数据没有指定记录文件路径（大概率是测试用的假数据），已跳过写入。'
+        return $null
+    }
+
     $daysObject = [ordered]@{}
     foreach ($key in @($Data.Days.Keys | Sort-Object -Descending)) {
         $daysObject[$key] = @($Data.Days[$key])
     }
 
+    $redemptions = @()
+    foreach ($r in @($Data.Redemptions)) {
+        if (-not $r) { continue }
+        $redemptions += [pscustomobject]@{
+            id    = [string]$r.Id
+            title = [string]$r.Title
+            price = [int]$r.Price
+            at    = [string]$r.At
+        }
+    }
+
     $json = [pscustomobject]@{
-        version = 2
-        updated = (Get-Date).ToString('s')
-        days    = $daysObject
+        version     = 3
+        updated     = (Get-Date).ToString('s')
+        days        = $daysObject
+        redemptions = $redemptions
     } | ConvertTo-Json -Depth 5
 
     $candidates = New-Object System.Collections.Generic.List[string]
@@ -491,49 +525,49 @@ function Get-ReminderBestStreak {
 
 function Get-ReminderBadgeList {
     <#
-    徽章定义，锁定状态时给出还差几天。
+    徽章墙。名字和天数都来自 rewards.json 的 milestones，和奖励中心是同一份配置。
     #>
-    $milestones = @(
-        @{ Streak = 3;  Name = '稳定打卡徽章'; Stars = 1 }
-        @{ Streak = 7;  Name = '一周满勤徽章'; Stars = 2 }
-        @{ Streak = 14; Name = '半月坚持徽章'; Stars = 3 }
-        @{ Streak = 30; Name = '月度肝帝徽章'; Stars = 4 }
-    )
+    param($Rules)
+
+    if (-not $Rules) { $Rules = Read-RewardRules }
 
     $list = @()
-    foreach ($m in $milestones) {
+    $index = 0
+    foreach ($m in (Get-RewardMilestones -Rules $Rules)) {
+        $index++
+        $stars = [Math]::Min(4, [Math]::Max(1, [int][Math]::Ceiling($index * 4.0 / [Math]::Max(1, @(Get-RewardMilestones -Rules $Rules).Count))))
         $list += [pscustomobject]@{
-            Streak   = $m.Streak
-            Name     = $m.Name
-            Stars    = $m.Stars
+            Streak   = $m.Days
+            Name     = $m.Title
+            Stars    = $stars
+            Coin     = $m.Coin
             Unlocked = $false
-            Remain   = $m.Streak
+            Remain   = $m.Days
         }
     }
     return $list
 }
 
 function Get-ReminderRewardText {
-    param($Stats)
+    <# 庆祝层上那行「奖励：…」 #>
+    param($Stats, $Rules)
 
-    $milestones = @(
-        @{ Streak = 3;  Name = '★ 稳定打卡徽章' }
-        @{ Streak = 7;  Name = '★★ 一周满勤徽章' }
-        @{ Streak = 14; Name = '★★★ 半月坚持徽章' }
-        @{ Streak = 30; Name = '★★★★ 月度肝帝徽章' }
-    )
+    if (-not $Rules) { $Rules = Read-RewardRules }
 
-    $earned = '今日打卡徽章 ★'
+    $earned = '今日打卡 ★'
     $next = $null
-    foreach ($m in $milestones) {
-        if ($Stats.Streak -ge $m.Streak) { $earned = $m.Name }
+    $index = 0
+    foreach ($m in (Get-RewardMilestones -Rules $Rules)) {
+        $index++
+        $label = '{0} {1} 天「{2}」' -f ('★' * [Math]::Min(4, $index)), $m.Days, $m.Title
+        if ($Stats.Streak -ge $m.Days) { $earned = $label }
         elseif (-not $next) { $next = $m }
     }
 
     if ($next) {
-        return ('奖励：{0} · 再坚持 {1} 天解锁「{2}」' -f $earned, ($next.Streak - $Stats.Streak), $next.Name)
+        return ('奖励：{0} · 再坚持 {1} 天解锁「{2} 天 {3}」' -f $earned, ($next.Days - $Stats.Streak), $next.Days, $next.Title)
     }
-    return ('奖励：{0} · 全部徽章已解锁' -f $earned)
+    return ('奖励：{0} · 全部里程碑已解锁' -f $earned)
 }
 
 function Test-ReminderAllDone {
@@ -562,7 +596,10 @@ function Update-ReminderStreakLabel {
     if (-not $text) { return }
 
     if (-not $Stats) {
-        $Stats = Get-ReminderStats -Dates (Get-ReminderHistoryDatesFromDisk)
+        $rules = Read-RewardRules
+        $data = Read-ReminderData
+        $Stats = Get-ReminderStats -Dates (Get-ReminderHistoryDatesFromDisk -Data $data)
+        $Stats.Streak = (Get-RewardState -Rules $rules -Data $data).Streak
     }
 
     if ($Stats.Total -le 0 -and -not $Stats.DoneToday) {
@@ -656,7 +693,11 @@ function Update-ReminderStatsVisuals {
     $dates = @(Get-ReminderCompleteDays -Data $Data)
     $partialDays = @(Get-ReminderPartialDays -Data $Data)
     $stats = Get-ReminderStats -Dates $dates
-    $best = Get-ReminderBestStreak -Dates $dates
+    # 连击和最长连击走奖励引擎的口径（含「每周一次冻结」，和奖励中心一致）
+    $rules = Read-RewardRules
+    $reward = Get-RewardState -Rules $rules -Data $Data
+    $stats.Streak = $reward.Streak
+    $best = $reward.BestStreak
 
     $dateSet = New-Object 'System.Collections.Generic.HashSet[string]'
     foreach ($d in $dates) { [void]$dateSet.Add([string]$d) }
@@ -686,11 +727,11 @@ function Update-ReminderStatsVisuals {
     $titleText = $Window.FindName('TitleText')
     $nextBadgeText = $Window.FindName('NextBadgeText')
     $titleText.Text = if ($stats.Total -gt 0) { '当前称号「{0}」' -f $stats.Title } else { '当前称号「还没起步」' }
-    $nextBadgeText.Text = Get-ReminderRewardText -Stats $stats
+    $nextBadgeText.Text = Get-ReminderRewardText -Stats $stats -Rules $rules
 
     # 徽章
     $badgesPanel = $Window.FindName('BadgesPanel')
-    $badges = Get-ReminderBadgeList
+    $badges = Get-ReminderBadgeList -Rules $rules
     foreach ($badge in $badges) {
         if ($stats.Streak -ge $badge.Streak) {
             $badge.Unlocked = $true
@@ -930,7 +971,7 @@ function Show-ReminderCelebrationLayer {
     CelebrationSubtitle / CelebrationStats / CelebrationReward / CelebrationCard / MedalRing。
     返回统计对象（连续/累计/称号），没有庆祝层元素时返回 $null。
     #>
-    param($Window, [switch]$MarkComplete)
+    param($Window, [switch]$MarkComplete, [string]$GainText)
 
     if (-not $Window) { return $null }
     $layer = $Window.FindName('CelebrationLayer')
@@ -970,6 +1011,14 @@ function Show-ReminderCelebrationLayer {
 
     $rewardText = $Window.FindName('CelebrationReward')
     if ($rewardText) { $rewardText.Text = Get-ReminderRewardText -Stats $stats }
+
+    # 今日收入（有奖励引擎时由调用方传进来）
+    # 注意：局部变量别叫 $gainText，会和 [string]$GainText 参数同名，被转成字符串后 .Text 就没了
+    $gainElement = $Window.FindName('CelebrationGain')
+    if ($gainElement) {
+        if ($GainText) { $gainElement.Text = $GainText }
+        else { $gainElement.Text = '' }
+    }
 
     # 尊重系统的「显示动画」设置：关掉了就不放彩带、不做动效
     $motionAllowed = $true
@@ -1112,4 +1161,540 @@ function Register-ReminderTask {
         -Force | Out-Null
 
     return (Get-ReminderTask -TaskName $TaskName)
+}
+
+# ============================================================
+#  奖励引擎（通用，和具体任务无关）
+#  ------------------------------------------------------------
+#  设计参考 the-forge（MIT）的做法：
+#    * 打卡记录是唯一真相，XP / 等级 / 代币全部由它推导，不单独存；
+#    * 规则全部放在 rewards.json，改数值不用碰脚本；
+#    * 任务名由规则决定，所以「三款游戏」换成「背单词 / 做题」也能直接用。
+# ============================================================
+
+function Get-RewardRulePaths {
+    <# 规则文件位置：优先程序目录，其次 %APPDATA% #>
+    $paths = New-Object System.Collections.Generic.List[string]
+    if ($PSScriptRoot) {
+        $paths.Add((Join-Path $PSScriptRoot 'rewards.json'))
+    }
+    $paths.Add((Join-Path (Join-Path $env:APPDATA 'MiHoYoDailyReminder') 'rewards.json'))
+    return $paths
+}
+
+function Get-DefaultRewardRulesJson {
+    <# 没有 rewards.json 时自动写一份默认规则 #>
+    return @"
+{
+  "_note": "奖励规则。改这个文件就能调奖励，不用改脚本。任务名必须和打卡记录里的名字一致。",
+  "version": 1,
+  "tasks": {
+    "原神": { "coin": 10, "xp": 30, "countsForStreak": true },
+    "崩坏：星穹铁道": { "coin": 10, "xp": 30, "countsForStreak": true },
+    "绝区零": { "coin": 10, "xp": 30, "countsForStreak": true }
+  },
+  "defaultTask": { "coin": 10, "xp": 30, "countsForStreak": true },
+  "allClearBonus": { "coin": 15, "xp": 45 },
+  "streak": { "freezePerWeek": 1, "bonusPerDay": 0.01, "bonusCapDays": 100 },
+  "weekly": { "grade": 75 },
+  "levels": { "curve": "habitica" },
+  "milestones": [
+    { "days": 7, "title": "一周不断", "coin": 50 },
+    { "days": 30, "title": "满月坚持", "coin": 200 },
+    { "days": 100, "title": "百日不辍", "coin": 600 },
+    { "days": 365, "title": "一年之约", "coin": 2000 }
+  ],
+  "shop": [
+    { "id": "game-hour", "title": "额外一小时游戏", "price": 90 },
+    { "id": "milk-tea", "title": "一杯奶茶", "price": 180 },
+    { "id": "movie", "title": "看一场电影", "price": 360 },
+    { "id": "lazy-day", "title": "一天不做也不心疼", "price": 540 }
+  ]
+}
+"@
+}
+
+function Read-RewardRules {
+    <#
+    读取 rewards.json；没有就写一份默认的。
+    返回的对象上会挂一个 Path 属性，方便界面显示规则文件位置。
+    #>
+    param([string[]]$Paths)
+
+    if (-not $Paths) { $Paths = Get-RewardRulePaths }
+
+    foreach ($p in $Paths) {
+        if (-not (Test-Path -LiteralPath $p)) { continue }
+        try {
+            $raw = [System.IO.File]::ReadAllText($p, [System.Text.Encoding]::UTF8)
+            if ([string]::IsNullOrWhiteSpace($raw)) { continue }
+            $rules = ConvertFrom-Json -InputObject $raw
+            $rules | Add-Member -NotePropertyName Path -NotePropertyValue $p -Force
+            return $rules
+        }
+        catch {
+            Write-ReminderLog ('读取奖励规则失败（' + $p + '）：' + $_.Exception.Message)
+        }
+    }
+
+    $target = (Get-RewardRulePaths)[0]
+    $json = Get-DefaultRewardRulesJson
+    try {
+        [System.IO.File]::WriteAllText($target, $json, [System.Text.UTF8Encoding]::new($false))
+        Write-ReminderLog ('已生成默认奖励规则：' + $target)
+    }
+    catch {
+        Write-ReminderLog ('写入默认奖励规则失败：' + $_.Exception.Message)
+    }
+
+    $rules = ConvertFrom-Json -InputObject $json
+    $rules | Add-Member -NotePropertyName Path -NotePropertyValue $target -Force
+    return $rules
+}
+
+function Get-RewardNumber {
+    <# 从规则对象里取一个数字，取不到就用默认值 #>
+    param($Object, [string]$Name, [double]$Default)
+
+    if ($Object) {
+        $prop = $Object.PSObject.Properties[$Name]
+        if ($prop -and $prop.Value -ne $null -and "$($prop.Value)" -ne '') {
+            try { return [double]$prop.Value } catch { }
+        }
+    }
+    return $Default
+}
+
+function Get-RewardTaskRule {
+    <# 取某个任务的规则，没配就返回 $null（调用方改用 defaultTask） #>
+    param($Rules, [string]$Name)
+
+    if (-not $Rules) { return $null }
+    $tasks = $Rules.PSObject.Properties['tasks']
+    if (-not $tasks -or -not $tasks.Value) { return $null }
+    $prop = $tasks.Value.PSObject.Properties[$Name]
+    if ($prop) { return $prop.Value }
+    return $null
+}
+
+function Get-RewardRequiredTasks {
+    <# 要全部完成才算「今天清完」的任务（countsForStreak 不为 false 的） #>
+    param($Rules)
+
+    $list = New-Object System.Collections.Generic.List[string]
+    if ($Rules) {
+        $tasks = $Rules.PSObject.Properties['tasks']
+        if ($tasks -and $tasks.Value) {
+            foreach ($prop in $tasks.Value.PSObject.Properties) {
+                $counts = Get-RewardNumber -Object $prop.Value -Name 'countsForStreak' -Default 1
+                if ($counts -ne 0) { $list.Add($prop.Name) }
+            }
+        }
+    }
+    if ($list.Count -eq 0) {
+        foreach ($name in (Get-ReminderGames)) { $list.Add($name) }
+    }
+    # 注意：不要把 List 直接塞进 @()，PowerShell 5.1 会抛 "Argument types do not match"
+    return $list.ToArray()
+}
+
+function Get-RewardShop {
+    <# 商店里的自定义奖励 #>
+    param($Rules)
+
+    $items = @()
+    if ($Rules) {
+        $shop = $Rules.PSObject.Properties['shop']
+        if ($shop -and $shop.Value) {
+            foreach ($item in @($shop.Value)) {
+                $items += [pscustomobject]@{
+                    Id    = [string]$item.id
+                    Title = [string]$item.title
+                    Price = [int](Get-RewardNumber -Object $item -Name 'price' -Default 100)
+                }
+            }
+        }
+    }
+    return $items
+}
+
+function Get-RewardMilestones {
+    <# 里程碑（连续 N 天的奖励），按天数从少到多 #>
+    param($Rules)
+
+    $list = @()
+    if ($Rules) {
+        $ms = $Rules.PSObject.Properties['milestones']
+        if ($ms -and $ms.Value) {
+            foreach ($item in @($ms.Value)) {
+                $list += [pscustomobject]@{
+                    Days  = [int](Get-RewardNumber -Object $item -Name 'days' -Default 7)
+                    Title = [string]$item.title
+                    Coin  = [int](Get-RewardNumber -Object $item -Name 'coin' -Default 0)
+                }
+            }
+        }
+    }
+    if ($list.Count -eq 0) {
+        $list = @(
+            [pscustomobject]@{ Days = 7;   Title = '一周不断'; Coin = 50 }
+            [pscustomobject]@{ Days = 30;  Title = '满月坚持'; Coin = 200 }
+            [pscustomobject]@{ Days = 100; Title = '百日不辍'; Coin = 600 }
+            [pscustomobject]@{ Days = 365; Title = '一年之约'; Coin = 2000 }
+        )
+    }
+    return @($list | Sort-Object Days)
+}
+
+function Get-RewardWeekKey {
+    <# 某一天所在那一周的钥匙（用周一做代表），冻结额度按周计算 #>
+    param([datetime]$Date)
+
+    $monday = $Date.AddDays(-(([int]$Date.DayOfWeek + 6) % 7))
+    return $monday.ToString('yyyy-MM-dd')
+}
+
+function Get-RewardMultiplier {
+    <# 连击倍率：线性增长并封顶（100 天 = 2 倍）。不要用指数，指数会把经济搞崩 #>
+    param($Rules, [double]$Streak)
+
+    $perDay = Get-RewardNumber -Object $Rules.streak -Name 'bonusPerDay' -Default 0.01
+    $capDays = Get-RewardNumber -Object $Rules.streak -Name 'bonusCapDays' -Default 100
+    $effective = [Math]::Min($Streak, $capDays)
+    if ($effective -lt 0) { $effective = 0 }
+    return [Math]::Round(1 + $effective * $perDay, 4)
+}
+
+function Get-RewardLevelNeed {
+    <# 升到下一级还需要多少 XP #>
+    param($Rules, [int]$Level)
+
+    $curve = 'habitica'
+    if ($Rules) {
+        $levels = $Rules.PSObject.Properties['levels']
+        if ($levels -and $levels.Value -and $levels.Value.curve) { $curve = [string]$levels.Value.curve }
+    }
+
+    switch ($curve) {
+        'linear' {
+            # 每级 +25：100 / 125 / 150 …，前期慢、后期不失控
+            return 100 + 25 * ($Level - 1)
+        }
+        'gentle' {
+            # 每级贵 6%：100 / 106 / 112 …
+            return [int][Math]::Round(100 * [Math]::Pow(1.06, $Level - 1))
+        }
+        default {
+            # Habitica 的曲线（源码实证）：前 4 级便宜，之后二次增长
+            if ($Level -lt 5) { return 25 * $Level }
+            if ($Level -eq 5) { return 150 }
+            return [int]([Math]::Round((($Level * $Level) * 0.25 + 10 * $Level + 139.75) / 10) * 10)
+        }
+    }
+}
+
+function Get-RewardLevelFromXp {
+    <# 由总 XP 推等级：返回等级 + 当前等级的进度 #>
+    param($Rules, [double]$Xp)
+
+    $level = 1
+    $rest = [double]$Xp
+    $guard = 0
+    while ($guard -lt 500) {
+        $guard++
+        $need = Get-RewardLevelNeed -Rules $Rules -Level $level
+        if ($need -le 0 -or $rest -lt $need) { break }
+        $rest -= $need
+        $level++
+    }
+    $nextNeed = Get-RewardLevelNeed -Rules $Rules -Level $level
+    return [pscustomobject]@{
+        Level    = $level
+        Into     = [int][Math]::Round($rest)
+        Need     = $nextNeed
+        Progress = $(if ($nextNeed -gt 0) { [Math]::Round($rest / $nextNeed, 4) } else { 0 })
+    }
+}
+
+function Get-RewardDayResult {
+    <#
+    某一天的基础奖励（不含连击倍率）：逐项给币/经验，全部任务清完再加全清奖励。
+    纯函数，不读盘。
+    #>
+    param($Rules, [string[]]$Items)
+
+    $items = @($Items)
+    $coin = 0.0
+    $xp = 0.0
+
+    foreach ($name in $items) {
+        $rule = Get-RewardTaskRule -Rules $Rules -Name $name
+        if (-not $rule -and $Rules) { $rule = $Rules.defaultTask }
+        $coin += Get-RewardNumber -Object $rule -Name 'coin' -Default 10
+        $xp += Get-RewardNumber -Object $rule -Name 'xp' -Default 30
+    }
+
+    $required = Get-RewardRequiredTasks -Rules $Rules
+    $done = 0
+    foreach ($name in $required) {
+        if ($items -contains $name) { $done++ }
+    }
+    $allClear = ($required.Count -gt 0 -and $done -ge $required.Count)
+    if ($allClear) {
+        $coin += Get-RewardNumber -Object $Rules.allClearBonus -Name 'coin' -Default 15
+        $xp += Get-RewardNumber -Object $Rules.allClearBonus -Name 'xp' -Default 45
+    }
+
+    return [pscustomobject]@{
+        Coin     = [double]$coin
+        Xp       = [double]$xp
+        Done     = $done
+        Required = $required.Count
+        AllClear = $allClear
+    }
+}
+
+function Get-RewardLedger {
+    <#
+    按时间顺序把每天的奖励算一遍（整套系统的核心）。
+    每一项都带当天结束时的连击、当时生效的倍率、以及是不是靠冻结日桥过去的。
+
+    口径说明：
+      * 倍率用「包含当天在内」的连击算（和 Habitica 的 streakBonus 一致）；
+      * 今天还没打卡不算断签，也不消耗冻结额度；
+      * 冻结额度按周计（freezePerWeek，默认每周 1 次），用完再漏才清零连击；
+      * 连击刚好踩到里程碑的当天，把里程碑奖励也算进当天收入。
+    #>
+    param($Rules, $Data, [datetime]$Today)
+
+    if (-not $Rules) { $Rules = Read-RewardRules }
+    if (-not $Data) { $Data = Read-ReminderData }
+    if (-not $Today) { $Today = Get-ReminderToday }
+
+    $todayDate = $Today.Date
+    $required = Get-RewardRequiredTasks -Rules $Rules
+    $freezePerWeek = Get-RewardNumber -Object $Rules.streak -Name 'freezePerWeek' -Default 1
+    $milestones = Get-RewardMilestones -Rules $Rules
+
+    $start = $todayDate
+    if (@($Data.Days.Keys).Count -gt 0) {
+        $oldest = (@($Data.Days.Keys | Sort-Object))[0]
+        try { $start = [datetime]::ParseExact([string]$oldest, 'yyyy-MM-dd', $null) } catch { $start = $todayDate }
+    }
+    $entries = New-Object System.Collections.Generic.List[object]
+    $freezeUsed = @{}
+    $streak = 0
+    $best = 0
+    $cursor = $start
+    $guard = 0
+
+    while ($cursor -le $todayDate -and $guard -lt 3000) {
+        $guard++
+        $key = $cursor.ToString('yyyy-MM-dd')
+        $items = @(Get-ReminderDayGames -Data $Data -Date $key)
+
+        $done = 0
+        foreach ($name in $required) {
+            if ($items -contains $name) { $done++ }
+        }
+        $complete = ($required.Count -gt 0 -and $done -ge $required.Count)
+
+        $bridged = $false
+        if ($complete) {
+            $streak++
+            if ($streak -gt $best) { $best = $streak }
+        }
+        elseif ($cursor.Date -eq $todayDate) {
+            # 今天还没结束，不算断签
+        }
+        else {
+            $weekKey = Get-RewardWeekKey -Date $cursor
+            $used = 0
+            if ($freezeUsed.ContainsKey($weekKey)) { $used = $freezeUsed[$weekKey] }
+            if ($used -lt $freezePerWeek) {
+                $freezeUsed[$weekKey] = $used + 1
+                $bridged = $true
+            }
+            else {
+                $streak = 0
+            }
+        }
+
+        $multiplier = Get-RewardMultiplier -Rules $Rules -Streak $streak
+        $base = Get-RewardDayResult -Rules $Rules -Items $items
+
+        $milestoneCoin = 0.0
+        $milestoneTitle = $null
+        if ($complete) {
+            foreach ($ms in $milestones) {
+                if ($ms.Days -eq $streak -and $ms.Coin -gt 0) {
+                    $milestoneCoin += $ms.Coin
+                    $milestoneTitle = $ms.Title
+                }
+            }
+        }
+
+        $coin = [Math]::Round($base.Coin * $multiplier, 2) + $milestoneCoin
+        $xp = [Math]::Round($base.Xp * $multiplier, 2)
+
+        $entries.Add([pscustomobject]@{
+            Date       = $key
+            Items      = @($items)
+            Done       = $done
+            Required   = $required.Count
+            Complete   = $complete
+            AllClear   = $base.AllClear
+            Bridged    = $bridged
+            Streak     = $streak
+            Multiplier = $multiplier
+            BaseCoin   = [double]$base.Coin
+            BaseXp     = [double]$base.Xp
+            Coin       = [double]$coin
+            Xp         = [double]$xp
+            Milestone  = $milestoneTitle
+        })
+        $cursor = $cursor.AddDays(1)
+    }
+
+    return $entries.ToArray()
+}
+
+function Get-RewardState {
+    <#
+    奖励总览：等级 / XP / 代币余额 / 连击 / 里程碑 / 今日收入。
+    全部由打卡记录 + rewards.json 推导，没有额外状态。
+    #>
+    param($Rules, $Data, [datetime]$Today)
+
+    if (-not $Rules) { $Rules = Read-RewardRules }
+    if (-not $Data) { $Data = Read-ReminderData }
+    if (-not $Today) { $Today = Get-ReminderToday }
+
+    $ledger = @(Get-RewardLedger -Rules $Rules -Data $Data -Today $Today)
+    $xpTotal = 0.0
+    $coinEarned = 0.0
+    $best = 0
+    $lastComplete = $null
+    $completeDays = 0
+    foreach ($entry in $ledger) {
+        $xpTotal += $entry.Xp
+        $coinEarned += $entry.Coin
+        if ($entry.Streak -gt $best) { $best = $entry.Streak }
+        if ($entry.Complete) {
+            $lastComplete = $entry
+            $completeDays++
+        }
+    }
+
+    $todayKey = $Today.ToString('yyyy-MM-dd')
+    $todayEntry = $null
+    foreach ($entry in $ledger) { if ($entry.Date -eq $todayKey) { $todayEntry = $entry } }
+
+    $weekKey = Get-RewardWeekKey -Date $Today
+    $freezePerWeek = Get-RewardNumber -Object $Rules.streak -Name 'freezePerWeek' -Default 1
+    $freezeUsedThisWeek = 0
+    foreach ($entry in $ledger) {
+        if (-not $entry.Bridged) { continue }
+        $entryDate = [datetime]::ParseExact($entry.Date, 'yyyy-MM-dd', $null)
+        if ((Get-RewardWeekKey -Date $entryDate) -eq $weekKey) { $freezeUsedThisWeek++ }
+    }
+
+    $spent = 0
+    foreach ($r in @($Data.Redemptions)) { $spent += [int]$r.Price }
+
+    $level = Get-RewardLevelFromXp -Rules $Rules -Xp $xpTotal
+
+    $milestoneList = @()
+    foreach ($ms in (Get-RewardMilestones -Rules $Rules)) {
+        $unlocked = ($best -ge $ms.Days)
+        $milestoneList += [pscustomobject]@{
+            Days     = $ms.Days
+            Title    = $ms.Title
+            Coin     = $ms.Coin
+            Unlocked = $unlocked
+            Remain   = $(if ($unlocked) { 0 } else { $ms.Days - $best })
+        }
+    }
+
+    $todayCoin = 0
+    $todayXp = 0
+    $todayMultiplier = 1
+    if ($todayEntry) {
+        $todayCoin = $todayEntry.Coin
+        $todayXp = $todayEntry.Xp
+        $todayMultiplier = $todayEntry.Multiplier
+    }
+
+    return [pscustomobject]@{
+        Rules            = $Rules
+        Ledger           = $ledger
+        Xp               = [int][Math]::Round($xpTotal)
+        Level            = $level.Level
+        LevelInto        = $level.Into
+        LevelNeed        = $level.Need
+        LevelProgress    = $level.Progress
+        CoinEarned       = [int][Math]::Round($coinEarned)
+        CoinSpent        = $spent
+        Balance          = [int][Math]::Round($coinEarned) - $spent
+        Streak           = $(if ($todayEntry) { $todayEntry.Streak } else { 0 })
+        BestStreak       = $best
+        FreezePerWeek    = $freezePerWeek
+        FreezeUsed       = $freezeUsedThisWeek
+        Milestones       = @($milestoneList)
+        TodayCoin        = $todayCoin
+        TodayXp          = $todayXp
+        TodayMultiplier  = $todayMultiplier
+        TodayEntry       = $todayEntry
+        LastCompleteDate = $(if ($lastComplete) { $lastComplete.Date } else { $null })
+        TotalDays        = $completeDays
+    }
+}
+
+function Add-RewardRedemption {
+    <# 用代币兑换一个自定义奖励（只记一笔兑换，余额是算出来的） #>
+    param($Data, $Rules, [string]$Id)
+
+    if (-not $Data) { $Data = Read-ReminderData }
+    if (-not $Rules) { $Rules = Read-RewardRules }
+
+    $item = $null
+    foreach ($candidate in (Get-RewardShop -Rules $Rules)) {
+        if ($candidate.Id -eq $Id) { $item = $candidate; break }
+    }
+    if (-not $item) { throw ('商店里没有这个奖励：' + $Id) }
+
+    $state = Get-RewardState -Rules $Rules -Data $Data
+    if ($state.Balance -lt $item.Price) {
+        throw ('代币不够：需要 {0}，现在只有 {1}' -f $item.Price, $state.Balance)
+    }
+
+    $list = New-Object System.Collections.Generic.List[object]
+    foreach ($r in @($Data.Redemptions)) { $list.Add($r) }
+    $list.Add([pscustomobject]@{
+        Id    = $item.Id
+        Title = $item.Title
+        Price = $item.Price
+        At    = (Get-Date).ToString('s')
+    })
+    $Data.Redemptions = $list.ToArray()
+    $null = Save-ReminderData -Data $Data
+    Write-ReminderLog ('兑换奖励：{0}（{1} 代币）' -f $item.Title, $item.Price)
+    return $item
+}
+
+function Remove-LastRewardRedemption {
+    <# 兑换点错了，撤掉最后一条 #>
+    param($Data)
+
+    if (-not $Data) { $Data = Read-ReminderData }
+    $list = @($Data.Redemptions)
+    if ($list.Count -eq 0) { return $null }
+
+    $last = $list[$list.Count - 1]
+    if ($list.Count -le 1) { $Data.Redemptions = @() }
+    else { $Data.Redemptions = @($list[0..($list.Count - 2)]) }
+
+    $null = Save-ReminderData -Data $Data
+    Write-ReminderLog ('撤销兑换：' + $last.Title)
+    return $last
 }

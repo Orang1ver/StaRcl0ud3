@@ -102,6 +102,8 @@ powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\daily-reminder.ps1 -F
 | `lib.ps1` | 共用库：游戏路径发现与启动、打卡数据读写、统计、庆祝动画、计划任务注册 |
 | `setup.ps1` | 注册 / 查看 / 删除计划任务 |
 | `history.json` | 打卡记录（自动生成） |
+| `rewards.json` | 奖励规则：任务分值、连击、里程碑、商店（可直接改） |
+| `build\test-rewards.ps1` | 奖励引擎自检（39 项） |
 | `assets\app.ico` / `assets\icon-preview.png` | 程序图标（多尺寸） / 各尺寸预览图 |
 | `build\make-icon.ps1` | 重新生成图标 |
 | `build\build-exe.ps1` + `build\Launcher.cs` | 重新编译 exe |
@@ -119,6 +121,64 @@ powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\daily-reminder.ps1 -F
 > 想要“真正的单文件版”（脚本和界面都塞进 exe，第一次运行自动解压到 `%LOCALAPPDATA%`，exe 可以随便放）也能做，说一声就好。
 
 ## 说明
+## 奖励中心（积分 / 代币 / 商店）
+
+打卡不只记天数了：清完每日会拿 **XP 和代币**，攒到里程碑有额外奖励，代币能在商店里兑换你自己定的现实奖励。
+
+进「奖励中心」能看到：等级 + 经验条、代币余额、今日收入、里程碑进度、奖励商店、兑换记录。
+
+### 规则全在 rewards.json 里
+
+想调数值不用改脚本，改 `rewards.json` 就行（程序里没有的字段会用默认值）：
+
+| 配置 | 作用 | 默认 |
+| --- | --- | --- |
+| `tasks` | 每个任务给多少币/经验、算不算进连击 | 三款游戏各 10 币 / 30 XP |
+| `allClearBonus` | 全部清完的额外奖励 | +15 币 / +45 XP |
+| `streak.freezePerWeek` | 每周允许几天「冻结」（漏一天不清零连击） | 1 |
+| `streak.bonusPerDay` / `bonusCapDays` | 连击倍率怎么涨、多少天封顶 | 每天 +1%，100 天封顶 |
+| `milestones` | 连续多少天给什么奖励 | 7 / 30 / 100 / 365 天 |
+| `levels.curve` | 等级曲线：`habitica`（默认）/ `linear` / `gentle` | habitica |
+| `shop` | 商店里的自定义奖励和价格 | 4 件示例 |
+
+### 计算公式
+
+```
+单项收入   xp   = round( 30 × 难度 × 连击倍率 )
+           coin = round( 10 × 难度 × 连击倍率 )
+全清奖励   再 +15 币 / +45 XP
+连击倍率   1 + min(连击天数, 100) / 100        → 1.00 ~ 2.00（线性封顶，不要用指数）
+等级曲线   lv<5: 25×lv ；lv=5: 150 ；否则 round((lv²×0.25 + 10×lv + 139.75)/10)×10
+冻结       同一周内漏掉 ≤ freezePerWeek 天，连击继续（显示成本周冻结还剩几次）
+里程碑     连击刚好到 N 天的那天，额外发 milestones 里配的代币
+代币余额   累计赚到的 − 兑换花掉的（余额是算出来的，不单独存）
+```
+
+一天三款全清、连击满 100 天时是 **+90 币 / +270 XP**；刚起步是 +45 币 / +135 XP。所以商店定价建议按「攒几天」来想：默认那件「一杯奶茶」180 币 ≈ 4 天。
+
+### 这几条是从开源项目里学来的
+
+- **难度乘数 `{0.1, 1, 1.5, 2}`** 和**升级曲线**、**线性连击（100 天 2 倍）**、**重复收益递减**都来自 Habitica 的源码（`server/models/task.js`、`script/ops/scoreTask.js`、`script/statHelpers.js`）。
+- **每周冻结日** 参考 `the-forge`（MIT）和 `STREAKT-App`——它们都把「漏一天就清零」改成了可恢复，因为不可恢复的连击最容易让人放弃。
+- **商店 + 愿望清单** 参考 `HabitTrove`（每个习惯自定义金币、攒币兑换现实奖励）。
+- **打卡记录是唯一真相、积分纯派生** 也是 `the-forge` 的做法：改规则不用洗数据，`history.json` 只管打卡，`rewards.json` 只管规则。
+
+### 改成「每日学习计划」的话
+
+`lib.ps1` 里的奖励引擎是**通用的**：它不认「游戏」，只认「某天完成了哪些任务」。所以做学习计划时，只要把 `rewards.json` 的 `tasks` 换成你的学习任务名（比如「背单词」「做一章题」），同一套 XP/代币/连击/商店逻辑就能直接用。
+
+### 自检
+
+```powershell
+# 用假数据验证奖励数学（不会碰你的记录）
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build\test-rewards.ps1
+
+# 算一遍界面配色的对比度（改颜色后跑）
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build\check-contrast.ps1
+```
+
+> 两道防线，防止测试写到真实记录上：`test-rewards.ps1` 只把假数据写到临时文件，跑完会比对 `history.json` 的 SHA256，变了就报错；`Save-ReminderData` 也会拒绝保存「没有指定路径」的数据（手工造的对象）。
+
 ## 界面设计规范
 
 深色界面按 **WCAG 2.1 AA** 校准过对比度，改颜色的时候照着这张表来，改完跑一遍校验：
