@@ -1,0 +1,38 @@
+{
+  "_note": "奖励规则。改这个文件就能调奖励，不用改脚本。任务名必须和打卡记录里的名字一致（换成学习计划时，把 tasks 换成你的学习任务名即可）。",
+  "version": 1,
+
+  "tasks": {
+    "原神": { "coin": 10, "xp": 30, "countsForStreak": true },
+    "崩坏：星穹铁道": { "coin": 10, "xp": 30, "countsForStreak": true },
+    "绝区零": { "coin": 10, "xp": 30, "countsForStreak": true }
+  },
+
+  "defaultTask": { "coin": 10, "xp": 30, "countsForStreak": true },
+
+  "allClearBonus": { "coin": 15, "xp": 45 },
+
+  "streak": {
+    "freezePerWeek": 1,
+    "bonusPerDay": 0.01,
+    "bonusCapDays": 100
+  },
+
+  "weekly": { "grade": 75 },
+
+  "levels": { "curve": "habitica" },
+
+  "milestones": [
+    { "days": 7, "title": "一周不断", "coin": 50 },
+    { "days": 30, "title": "满月坚持", "coin": 200 },
+    { "days": 100, "title": "百日不辍", "coin": 600 },
+    { "days": 365, "title": "一年之约", "coin": 2000 }
+  ],
+
+  "shop": [
+    { "id": "game-hour", "title": "额外一小时游戏", "price": 90 },
+    { "id": "milk-tea", "title": "一杯奶茶", "price": 180 },
+    { "id": "movie", "title": "看一场电影", "price": 360 },
+    { "id": "lazy-day", "title": "一天不做也不心疼", "price": 540 }
+  ]
+}
