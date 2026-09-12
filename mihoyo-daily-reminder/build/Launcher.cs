@@ -35,6 +35,7 @@ internal static class Launcher
         string scriptName = DesktopScript;
         // 传给脚本的原始参数（解析成命名参数后交给 PowerShell）
         List<string> rawArgs = new List<string>();
+        List<string> ignoredLegacy = new List<string>();
 
         int i = 0;
         while (i < args.Length)
@@ -49,19 +50,52 @@ internal static class Launcher
                 i += 2;
                 continue;
             }
+
+            // 兼容老版本的快捷方式：它们会把 powershell 的启动参数一起塞进来
+            //（-NoProfile -WindowStyle Hidden -STA -ExecutionPolicy Bypass -File xxx.ps1），
+            // 这些参数对宿主没意义，直接忽略；-File 后面那个脚本名当成要跑的脚本。
+            if (current == "-NoProfile" || current == "-STA" || current == "-Mta")
+            {
+                ignoredLegacy.Add(current);
+                i++;
+                continue;
+            }
+            if (current == "-WindowStyle" || current == "-ExecutionPolicy" || current == "-File")
+            {
+                if (current == "-File" && i + 1 < args.Length)
+                {
+                    string named = Path.GetFileName(args[i + 1]);
+                    if (!string.IsNullOrEmpty(named)) { scriptName = named; }
+                }
+                ignoredLegacy.Add(current);
+                i += 2;
+                continue;
+            }
+
             rawArgs.Add(current);
             i++;
+        }
+
+        if (ignoredLegacy.Count > 0)
+        {
+            WriteLog("检测到老快捷方式带来的 powershell 参数，已忽略：" + string.Join(" ", ignoredLegacy));
         }
 
         string scriptPath = Path.Combine(baseDir, scriptName);
         if (!File.Exists(scriptPath))
         {
-            MessageBox.Show(
-                "找不到 " + scriptName + "。\n\n请把这个程序和脚本文件放在同一个文件夹里再运行。",
-                AppTitle,
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
-            return 1;
+            // 老快捷方式可能指向早就搬走的脚本名，能兜回默认脚本就兜
+            string fallback = Path.Combine(baseDir, DesktopScript);
+            if (scriptName != DesktopScript && File.Exists(fallback)) { scriptPath = fallback; }
+            else
+            {
+                MessageBox.Show(
+                    "找不到 " + scriptName + "。\n\n请把这个程序和脚本文件放在同一个文件夹里再运行。",
+                    AppTitle,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return 1;
+            }
         }
 
         try
