@@ -62,8 +62,6 @@ function Start-Watcher {
     param([string[]]$Names, [int]$GraceSeconds = 8, [int]$PollSeconds = 1, [int]$MinSeconds = 2)
 
     $childArgs = @(
-        '-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass',
-        '-File', "`"$watchScript`"",
         '-ProcessNames', ($Names -join ','),
         '-Mode', 'none',
         '-MaxHours', '1',
@@ -73,6 +71,17 @@ function Start-Watcher {
         '-LockPath', "`"$lockFile`"",
         '-ResultPath', "`"$resultFile`""
     )
+
+    # 有独立宿主 exe 就走 exe（顺便验证 --watch 这条路），没有才退回 powershell
+    $hostExe = Get-ReminderHostPath
+    if ($hostExe) {
+        return Start-Process -FilePath $hostExe -ArgumentList (@('--watch') + $childArgs) -WindowStyle Hidden -PassThru
+    }
+
+    $childArgs = @(
+        '-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass',
+        '-File', "`"$watchScript`""
+    ) + $childArgs
     return Start-Process -FilePath $winPs -ArgumentList $childArgs -WindowStyle Hidden -PassThru
 }
 

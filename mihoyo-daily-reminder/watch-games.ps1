@@ -170,12 +170,7 @@ if ($fired) {
         if ($Mode -eq 'ask') {
             $reminder = Join-Path $PSScriptRoot 'daily-reminder.ps1'
             if (Test-Path -LiteralPath $reminder) {
-                $winPs = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
-                $childArgs = @(
-                    '-NoProfile', '-STA', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass',
-                    '-File', "`"$reminder`""
-                )
-                Start-Process -FilePath $winPs -ArgumentList $childArgs -WindowStyle Hidden
+                $null = Start-ReminderHostProcess -Kind reminder
             }
             else {
                 Write-ReminderLog '找不到 daily-reminder.ps1，没法重新弹提醒'

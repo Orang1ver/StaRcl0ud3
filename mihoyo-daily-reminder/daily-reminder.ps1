@@ -504,17 +504,8 @@ function Invoke-DailyReminder {
 
         $delay = $SnoozeMinutes * 60
         Write-ReminderLog "点击了稍后提醒：$SnoozeMinutes 分钟，生成独立提醒进程"
-        $winPs = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
-        $childArgs = @(
-            '-NoProfile',
-            '-STA',
-            '-WindowStyle', 'Hidden',
-            '-ExecutionPolicy', 'Bypass',
-            '-File', "`"$PSCommandPath`"",
-            '-DelaySeconds', "$delay"
-        )
         try {
-            Start-Process -FilePath $winPs -ArgumentList $childArgs -WindowStyle Hidden
+            $null = Start-ReminderHostProcess -Kind reminder -ExtraArgs @('-DelaySeconds', "$delay")
             Write-ReminderLog "独立提醒进程已启动，本进程退出"
             return
         }
