@@ -17,6 +17,25 @@ const HTML_FILE = path.join(ROOT, 'dashboard.html');
 const AVATAR_DIR = path.join(ROOT, 'avatars');
 const GAME_LIST_FILE = path.join(ROOT, 'games.txt');
 const CUSTOM_FILE = path.join(ROOT, 'games.json');
+const LOG_FILE = path.join(ROOT, 'tracker.log');
+
+// 记录器和看门任务都会写这个日志；排查「为什么今天没记上」先看它
+const LOG_CRLF = String.fromCharCode(13) + String.fromCharCode(10);
+const LOG_CR = String.fromCharCode(13);
+const LOG_LF = String.fromCharCode(10);
+const LOG_SPLIT = new RegExp(LOG_CR + '?' + LOG_LF);
+
+function logTracker(msg) {
+  try {
+    const line = new Date().toLocaleString('zh-CN', { hour12: false }) + '  ' + msg;
+    fs.appendFileSync(LOG_FILE, line + LOG_CRLF, 'utf8');
+    const size = fs.statSync(LOG_FILE).size;
+    if (size > 200 * 1024) {
+      const parts = fs.readFileSync(LOG_FILE, 'utf8').split(LOG_SPLIT);
+      fs.writeFileSync(LOG_FILE, parts.slice(-200).join(LOG_CRLF), 'utf8');
+    }
+  } catch (e) { /* 日志写不了也不能影响统计 */ }
+}
 
 const GAME_NAMES = {
   yuanshen: '原神',
@@ -1035,22 +1054,26 @@ function openDashboardWindow() {
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
+    logTracker('已经有一个实例在跑（端口被占用），本次启动直接退出' + (process.argv.includes('--open') ? '，顺便打开面板' : ''));
     console.log('Dashboard is already running at http://127.0.0.1:' + PORT);
     if (process.argv.includes('--open')) openDashboardWindow();
   } else {
+    logTracker('启动失败：' + err.message);
     console.error(err.message);
   }
   process.exit(0);
 });
 
 server.listen(PORT, '127.0.0.1', () => {
+  logTracker('启动成功：pid=' + process.pid + '，参数=[' + process.argv.slice(2).join(' ') + ']，目录=' + ROOT);
   console.log('Game dashboard: http://127.0.0.1:' + PORT);
   if (process.argv.includes('--open')) openDashboardWindow();
-});
 
-// ---- 每日自动备份 + 定时刷新 ----
-ensureDailyBackup();
-setInterval(ensureDailyBackup, 30 * 60 * 1000);
+  // ---- 每日自动备份 ----
+  // 只有真正抢到端口的实例才做备份：看门任务重复拉起的实例不该来覆盖备份
+  ensureDailyBackup();
+  setInterval(ensureDailyBackup, 30 * 60 * 1000);
+});
 
 // ---- standalone mode: background tracker + dashboard in one process ----
 const isSeaApp = (() => {
