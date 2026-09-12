@@ -53,6 +53,7 @@ git -C "C:\Users\StarRiver\Desktop\code\StaRcl0ud3" push origin main
   两个都要传 `-ProjectRoot`
 - 颜色改动跑 `build\check-contrast.ps1`
 - 合并后确认用户目录里确实是新版本（对比 exe 哈希 / 看关键几行）
+- **功能/入口/数据结构有变动时，顺手更新 `项目现状.md`**（它是下一个对话的交接说明，别让它过时）
 
 ## 这套程序的几个关键事实
 
