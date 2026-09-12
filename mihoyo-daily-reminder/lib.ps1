@@ -1135,10 +1135,18 @@ function Register-ReminderTask {
         throw "时间格式应为 HH:mm，例如 23:30"
     }
 
-    $windowsPowerShell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $action = New-ScheduledTaskAction `
-        -Execute $windowsPowerShell `
-        -Argument "-NoProfile -WindowStyle Hidden -STA -ExecutionPolicy Bypass -File `"$TaskScriptPath`""
+    # 计划任务优先直接调用宿主 exe：任务管理器里看到的是「米哈游每日助手」，
+    # 而不是一串 powershell.exe。exe 不在时才退回 powershell -File。
+    $hostExe = Get-ReminderHostPath
+    if ($hostExe) {
+        $action = New-ScheduledTaskAction -Execute $hostExe -Argument '--reminder' -WorkingDirectory $PSScriptRoot
+    }
+    else {
+        $windowsPowerShell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        $action = New-ScheduledTaskAction `
+            -Execute $windowsPowerShell `
+            -Argument "-NoProfile -WindowStyle Hidden -STA -ExecutionPolicy Bypass -File `"$TaskScriptPath`""
+    }
 
     $trigger = New-ScheduledTaskTrigger -Daily -At $Time
 
@@ -1798,6 +1806,68 @@ function Get-ReminderAppPath {
     return $null
 }
 
+function Get-ReminderHostPath {
+    <# 独立宿主 exe：它把 PowerShell 引擎装在自己进程里跑脚本，所以不会有 powershell.exe 冒出来 #>
+    $exe = Join-Path $PSScriptRoot '米哈游每日助手.exe'
+    if (Test-Path -LiteralPath $exe) { return $exe }
+    return $null
+}
+
+function Start-ReminderHostProcess {
+    <#
+    起一个独立进程跑某个脚本。
+      优先：米哈游每日助手.exe --reminder / --watch / --desktop / --script <名字>
+      退路：exe 不在时（比如只拷了脚本）才回退到 powershell.exe -File
+    #>
+    param(
+        [ValidateSet('desktop', 'reminder', 'watch', 'script')][string]$Kind = 'reminder',
+        [string[]]$ExtraArgs = @(),
+        [string]$ScriptName = '',
+        [switch]$PassThru
+    )
+
+    $arguments = @()
+    $hostExe = Get-ReminderHostPath
+
+    if ($hostExe) {
+        $fileName = $hostExe
+        switch ($Kind) {
+            'desktop' { $arguments += '--desktop' }
+            'watch' { $arguments += '--watch' }
+            'script' { $arguments += @('--script', $ScriptName) }
+            default { $arguments += '--reminder' }
+        }
+    }
+    else {
+        $windowsPowerShell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        if (-not (Test-Path -LiteralPath $windowsPowerShell)) {
+            throw '既没有宿主 exe，也没有 Windows PowerShell。'
+        }
+        $scriptFile = 'daily-reminder.ps1'
+        if ($Kind -eq 'watch') { $scriptFile = 'watch-games.ps1' }
+        elseif ($Kind -eq 'desktop') { $scriptFile = 'desktop-app.ps1' }
+        elseif ($Kind -eq 'script') { $scriptFile = $ScriptName }
+
+        $fileName = $windowsPowerShell
+        $arguments += @(
+            '-NoProfile', '-STA', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass',
+            '-File', ('"{0}"' -f (Join-Path $PSScriptRoot $scriptFile))
+        )
+    }
+
+    foreach ($extra in @($ExtraArgs)) { $arguments += $extra }
+
+    $parameters = @{
+        FilePath         = $fileName
+        WorkingDirectory = $PSScriptRoot
+        WindowStyle      = 'Hidden'
+    }
+    if ($arguments.Count -gt 0) { $parameters.ArgumentList = $arguments }
+    if ($PassThru) { $parameters.PassThru = $true }
+
+    return (Start-Process @parameters)
+}
+
 function Start-ReminderWatcher {
     <#
     起一个独立进程盯着这些游戏（弹窗脚本不等，免得一直占着计划任务的进程）。
@@ -1818,13 +1888,7 @@ function Start-ReminderWatcher {
     }
 
     $settings = Read-ReminderWatchSettings
-    $winPs = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $childArgs = @(
-        '-NoProfile',
-        '-STA',
-        '-WindowStyle', 'Hidden',
-        '-ExecutionPolicy', 'Bypass',
-        '-File', "`"$scriptPath`"",
         '-ProcessNames', (@($ProcessNames) -join ','),
         '-Mode', $Mode,
         '-MaxHours', [string]([int]$settings.MaxHours),
@@ -1834,7 +1898,7 @@ function Start-ReminderWatcher {
     )
 
     try {
-        $proc = Start-Process -FilePath $winPs -ArgumentList $childArgs -WindowStyle Hidden -PassThru
+        $proc = Start-ReminderHostProcess -Kind watch -ExtraArgs $childArgs -PassThru
         Write-ReminderLog ('看门进程已启动：盯 ' + (@($ProcessNames) -join '、') + '，退出后 ' + $Mode + '（PID ' + $proc.Id + '）')
         return $proc
     }

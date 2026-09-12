@@ -101,7 +101,7 @@ function Test-DesktopWindowExists {
     真的有一个「米哈游每日助手」窗口开着吗？
     万一上次退出时留了个没有窗口的残留进程，互斥体还在，这里就不会把入口挡死。
     #>
-    foreach ($item in @(Get-Process -Name powershell -ErrorAction SilentlyContinue)) {
+    foreach ($item in @(Get-Process -ErrorAction SilentlyContinue)) {
         try {
             if ($item.MainWindowTitle -like '*米哈游每日助手*') { return $true }
         }
@@ -805,7 +805,6 @@ function Invoke-DesktopLaunchMissing {
 function Invoke-DesktopSnooze {
     <# 点「10 分钟后再提醒」 #>
     $minutes = 10
-    $windowPowerShell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $reminderScript = Join-Path $PSScriptRoot 'daily-reminder.ps1'
 
     if (-not (Test-Path -LiteralPath $reminderScript)) {
@@ -813,17 +812,8 @@ function Invoke-DesktopSnooze {
         return
     }
 
-    $arguments = @(
-        '-NoProfile'
-        '-STA'
-        '-WindowStyle', 'Hidden'
-        '-ExecutionPolicy', 'Bypass'
-        '-File', ('"{0}"' -f $reminderScript)
-        '-DelaySeconds', ([string]($minutes * 60))
-    )
-
     try {
-        Start-Process -FilePath $windowPowerShell -ArgumentList $arguments -WindowStyle Hidden
+        $null = Start-ReminderHostProcess -Kind reminder -ExtraArgs @('-DelaySeconds', ([string]($minutes * 60)))
         $when = (Get-Date).AddMinutes($minutes).ToString('HH:mm')
         Show-DesktopToast -Text ('好，{0} 分钟后（{1}）再提醒你；这中间清完了就不会再弹。' -f $minutes, $when) -Kind 'ok'
         Write-ReminderLog ('桌面程序：安排 {0} 分钟后再提醒' -f $minutes)
@@ -1018,7 +1008,6 @@ function Reset-DesktopData {
 }
 
 function Open-DesktopReminderPreview {
-    $windowPowerShell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $reminderScript = Join-Path $PSScriptRoot 'daily-reminder.ps1'
 
     if (-not (Test-Path -LiteralPath $reminderScript)) {
@@ -1026,15 +1015,8 @@ function Open-DesktopReminderPreview {
         return
     }
 
-    $arguments = @(
-        '-NoProfile'
-        '-STA'
-        '-ExecutionPolicy', 'Bypass'
-        '-File', ('"{0}"' -f $reminderScript)
-        '-Force'
-    )
     try {
-        Start-Process -FilePath $windowPowerShell -ArgumentList $arguments -WindowStyle Hidden
+        $null = Start-ReminderHostProcess -Kind reminder -ExtraArgs @('-Force')
         Show-DesktopToast -Text '已经打开 23:30 的提醒弹窗（强制显示，方便看效果）。' -Kind 'skip'
     }
     catch {
