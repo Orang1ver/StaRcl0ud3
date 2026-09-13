@@ -143,7 +143,7 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
     
-                <!-- 头部 -->
+                <!-- 头部（恭喜模式下 Set-ReminderCongratsHeader 会改这三行字） -->
                 <Grid Grid.Row="0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
@@ -155,16 +155,19 @@
                                 CornerRadius="6"
                                 Padding="9,4"
                                 HorizontalAlignment="Left">
-                            <TextBlock Text="每日 23:30 · 例行检查"
+                            <TextBlock x:Name="HeaderTagText"
+                                       Text="每日 23:30 · 例行检查"
                                        FontSize="10.5"
                                        Foreground="#FFFFDE9E"/>
                         </Border>
-                        <TextBlock Text="米哈游每日提醒"
+                        <TextBlock x:Name="HeaderTitleText"
+                                   Text="米哈游每日提醒"
                                    Margin="0,9,0,0"
                                    FontSize="21"
                                    FontWeight="Bold"
                                    Foreground="White"/>
-                        <TextBlock Text="原神 · 星穹铁道 · 绝区零 的每日任务和体力清了吗？"
+                        <TextBlock x:Name="HeaderSubtitleText"
+                                   Text="原神 · 星穹铁道 · 绝区零 的每日任务和体力清了吗？"
                                    Margin="0,4,0,0"
                                    FontSize="12"
                                    Foreground="#FFB7C2DE"/>
@@ -388,7 +391,8 @@
                         <Button x:Name="SnoozeButton"
                                 Style="{StaticResource GhostButton}"
                                 Content="10 分钟后提醒"/>
-                        <TextBlock Text=" · "
+                        <TextBlock x:Name="SnoozeSep"
+                                   Text=" · "
                                    Margin="4,0"
                                    Foreground="#FFA6B1CE"
                                    VerticalAlignment="Center"
@@ -406,7 +410,7 @@
                                Text="连续打卡 0 天"/>
                 </StackPanel>
             </Grid>
-            <!-- 全部完成庆祝层 -->
+            <!-- 全部完成庆祝层（三款早就清完的 23:30 也用它来道喜） -->
             <Grid x:Name="CelebrationLayer"
                   Visibility="Collapsed"
                   Panel.ZIndex="50">

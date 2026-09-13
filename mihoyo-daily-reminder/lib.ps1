@@ -1119,7 +1119,7 @@ function Get-ReminderTaskClock {
 function Register-ReminderTask {
     <#
     注册（或更新）每天提醒的 Windows 计划任务。
-    任务本身只跑 daily-reminder.ps1：已经全部完成的日子会静默退出，不再打扰。
+    任务本身只跑 daily-reminder.ps1：已经全部完成的日子弹「恭喜完成」，没清完才弹提醒窗口。
     #>
     param(
         [string]$Time = '23:30',
@@ -1165,7 +1165,7 @@ function Register-ReminderTask {
         -Trigger $trigger `
         -Settings $settings `
         -Principal $principal `
-        -Description '每天提醒完成米哈游三款游戏的每日任务与体力；三款都清完的日子不打扰。' `
+        -Description '每天提醒完成米哈游三款游戏的每日任务与体力；三款都清完的日子道一声喜。' `
         -Force | Out-Null
 
     return (Get-ReminderTask -TaskName $TaskName)

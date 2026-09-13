@@ -10,7 +10,7 @@
     2. 等这几个游戏进程全部退出（每 15 秒看一次，要连续两次看不到才算退干净，
        免得游戏自己重启的那一瞬间误判；同时会跳过一次都没跑满 90 秒的情况）；
     3. 按 mode 做事：
-         ask  -> 重新弹一次提醒弹窗（三款都清了的话它会自己静默退出）
+         ask  -> 重新弹一次提醒弹窗（三款都清了的话它会自己静默退出，不重复道喜）
          app  -> 直接把桌面程序唤到前台
          none -> 只写日志，什么都不做（测试用）
 
@@ -170,7 +170,8 @@ if ($fired) {
         if ($Mode -eq 'ask') {
             $reminder = Join-Path $PSScriptRoot 'daily-reminder.ps1'
             if (Test-Path -LiteralPath $reminder) {
-                $null = Start-ReminderHostProcess -Kind reminder
+                # -SkipWhenDone：刚玩完的那次不再道喜，道喜留给 23:30 那一趟
+                $null = Start-ReminderHostProcess -Kind reminder -ExtraArgs @('-SkipWhenDone')
             }
             else {
                 Write-ReminderLog '找不到 daily-reminder.ps1，没法重新弹提醒'
