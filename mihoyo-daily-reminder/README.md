@@ -28,7 +28,7 @@ exe 是**独立宿主**：它把 Windows 自带的 PowerShell 引擎**装进自�
 | 命令 | 作用 |
 | --- | --- |
 | `米哈游每日助手.exe` | 打开桌面程序 |
-| `米哈游每日助手.exe --reminder` | 跑 23:30 那个提醒弹窗（`-Force` 强制显示普通提醒窗口） |
+| `米哈游每日助手.exe --reminder` | 跑 23:30 那个提醒弹窗（`-Force` 强制显示普通提醒、`-ForceCongrats` 预览恭喜窗口） |
 | `米哈游每日助手.exe --watch -ProcessNames YuanShen,StarRail -Mode ask` | 盯游戏进程的看门进程 |
 | `米哈游每日助手.exe --script 别的脚本.ps1` | 跑同目录下任意脚本 |
 
@@ -51,7 +51,7 @@ exe 是**独立宿主**：它把 Windows 自带的 PowerShell 引擎**装进自�
   - 每天提醒时间（写入计划任务）、启用 / 暂停提醒。
   - 打卡数据：记录文件路径、汇总、「打开所在文件夹」「重新读取」「清空打卡记录」。
   - 快捷方式：一键在桌面 + 开始菜单创建「米哈游每日助手」。
-  - 关于：「立即预览提醒弹窗」（强制显示 23:30 的弹窗看看效果）、「打开程序目录」。
+  - 关于：「预览提醒弹窗」（强制显示普通提醒看看效果）、「预览恭喜弹窗」（看三款清完时那道道喜，只画样子、不改打卡记录）、「打开程序目录」。
 
 窗口操作：**按住标题栏或空白处可以拖动窗口**（点卡片、按钮不会误拖），右上角是「最小化」和「关闭」。
 
@@ -143,6 +143,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\daily-reminder.ps1 -CheckC
 
 # 立刻预览提醒弹窗（忽略“今天已完成”的判断，强制看普通提醒窗口的样子）
 powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\daily-reminder.ps1 -Force
+
+# 预览「已经全部完成」时弹的恭喜窗口（不看也不写打卡记录，随便看）
+powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\daily-reminder.ps1 -ForceCongrats
 ```
 
 ## 文件说明

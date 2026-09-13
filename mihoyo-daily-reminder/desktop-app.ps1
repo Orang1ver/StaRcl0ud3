@@ -1024,6 +1024,27 @@ function Open-DesktopReminderPreview {
     }
 }
 
+function Open-DesktopCongratsPreview {
+    <#
+    预览「23:30 时三款已经清完」弹的那个道喜窗口。
+    走 -ForceCongrats：不读完成状态、也不会往打卡记录里写东西。
+    #>
+    $reminderScript = Join-Path $PSScriptRoot 'daily-reminder.ps1'
+
+    if (-not (Test-Path -LiteralPath $reminderScript)) {
+        Show-DesktopToast -Text '找不到 daily-reminder.ps1。' -Kind 'fail'
+        return
+    }
+
+    try {
+        $null = Start-ReminderHostProcess -Kind reminder -ExtraArgs @('-ForceCongrats')
+        Show-DesktopToast -Text '已经打开「恭喜完成」弹窗预览（不会改打卡记录）。' -Kind 'skip'
+    }
+    catch {
+        Show-DesktopToast -Text ('打开恭喜弹窗失败：{0}' -f $_.Exception.Message) -Kind 'fail'
+    }
+}
+
 function Open-DesktopAppFolder {
     Start-Process -FilePath 'explorer.exe' -ArgumentList ('"{0}"' -f $PSScriptRoot)
 }
@@ -1164,6 +1185,10 @@ function New-DesktopWindow {
     $window.FindName('AboutReminderButton').Add_Click({
         param($sender, $eventArgs)
         Open-DesktopReminderPreview
+    })
+    $window.FindName('PreviewCongratsButton').Add_Click({
+        param($sender, $eventArgs)
+        Open-DesktopCongratsPreview
     })
     $window.FindName('OpenFolderButton').Add_Click({
         param($sender, $eventArgs)

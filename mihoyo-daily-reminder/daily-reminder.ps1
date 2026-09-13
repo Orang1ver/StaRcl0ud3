@@ -20,6 +20,8 @@
 .PARAMETER SkipWhenDone
   今天已经全部完成时直接静默退出，不弹恭喜窗口（看门进程回来时用，
   免得玩完刚关游戏又被恭喜一次）。
+.PARAMETER ForceCongrats
+  不看打卡数据、也不写打卡数据，直接弹一次「恭喜完成」窗口（预览用）。
 .PARAMETER SnoozeMinutes
   点“稍后提醒”后等待的分钟数，默认 10 分钟。
 .PARAMETER DelaySeconds
@@ -40,6 +42,7 @@ param(
     [switch]$Force,
     [switch]$NoRun,
     [switch]$SkipWhenDone,
+    [switch]$ForceCongrats,
     [int]$SnoozeMinutes = 10,
     [int]$DelaySeconds = 0
 )
@@ -51,6 +54,7 @@ $script:dialogWindow = $null
 $script:dialogGames = @()
 $script:dialogStates = @()
 $script:dialogTodayKey = $null
+$script:dialogPreview = $false
 function Set-ReminderCardVisual {
     param(
         [int]$Index,
@@ -124,7 +128,7 @@ function Show-ReminderCelebration {
     弹窗里的庆祝层交给 lib.ps1 里的共用实现，
     这里只负责记住“已经庆祝过”，避免重复弹。
     #>
-    param($Window)
+    param($Window, [switch]$Preview)
 
     $script:celebrationShown = $true
     $script:celebrationPending = $false
@@ -132,7 +136,13 @@ function Show-ReminderCelebration {
     $data = Read-ReminderData
     $reward = Get-RewardState -Rules $rules -Data $data
     $gainText = '今日 +{0} 代币 · +{1} XP（倍率 ×{2}）' -f [int][Math]::Round($reward.TodayCoin), [int][Math]::Round($reward.TodayXp), $reward.TodayMultiplier
-    $stats = Show-ReminderCelebrationLayer -Window $Window -MarkComplete -GainText $gainText
+    if ($Preview) {
+        # 预览：只画样子，绝不往打卡记录里写“今天完成了”
+        $stats = Show-ReminderCelebrationLayer -Window $Window -GainText $gainText
+    }
+    else {
+        $stats = Show-ReminderCelebrationLayer -Window $Window -MarkComplete -GainText $gainText
+    }
     if ($stats) {
         Update-ReminderStreakLabel -Window $Window -Stats $stats
     }
@@ -143,9 +153,9 @@ function Show-ReminderCongrats {
     23:30 的那一趟三款已经清完了：弹的是道喜，不是催任务。
     庆祝层直接复用，只把标题 / 副标题换成“已经完成”的说法。
     #>
-    param($Window)
+    param($Window, [switch]$Preview)
 
-    Show-ReminderCelebration -Window $Window
+    Show-ReminderCelebration -Window $Window -Preview:$Preview
 
     $titleText = $Window.FindName('CelebrationTitle')
     if ($titleText) { $titleText.Text = '恭喜，今日任务全部完成！' }
@@ -217,7 +227,7 @@ function Show-ReminderDialog {
     -Completed：这次进来的时候三款就已经清完了（23:30 那道检查），
     弹的是「恭喜完成」，所以藏掉催任务的按钮、开场就把庆祝层铺上去。
     #>
-    param($Games, [switch]$Completed)
+    param($Games, [switch]$Completed, [switch]$Preview)
 
     Add-Type -AssemblyName PresentationFramework
     Add-Type -AssemblyName PresentationCore
@@ -234,6 +244,7 @@ function Show-ReminderDialog {
     Set-ReminderWindowIcon -Window $window
     $script:dialogGames = $Games
     $script:dialogTodayKey = (Get-ReminderToday).ToString('yyyy-MM-dd')
+    $script:dialogPreview = [bool]$Preview
     $markedToday = @(Get-ReminderDayGames -Date $script:dialogTodayKey)
 
     $script:dialogStates = New-Object bool[] $Games.Count
@@ -381,6 +392,18 @@ function Show-ReminderDialog {
 
     if ($Completed) {
         # 三款早就清完了：藏掉“启动未完成的游戏 / 稍后提醒”，换成道喜的样子
+        if ($Preview) {
+            # 预览：卡片全按“已完成”画出来，但不动打卡记录
+            for ($i = 0; $i -lt $Games.Count; $i++) {
+                $script:dialogStates[$i] = $true
+                Set-ReminderCardVisual `
+                    -Index $i `
+                    -Done $true `
+                    -Running $Games[$i].Running `
+                    -Found $Games[$i].Found `
+                    -Window $window
+            }
+        }
         $launchButton.Visibility = 'Collapsed'
         $launchButton.IsDefault = $false          # 让回车落到「收下祝福」上
         $snoozeButton.Visibility = 'Collapsed'
@@ -391,7 +414,7 @@ function Show-ReminderDialog {
         # 等窗口显示出来再铺庆祝层：这时候才有真实尺寸，彩带不会挤成一团
         $window.Add_Loaded({
             try {
-                Show-ReminderCongrats -Window $script:dialogWindow
+                Show-ReminderCongrats -Window $script:dialogWindow -Preview:$script:dialogPreview
             }
             catch {
                 Write-ReminderLog ("恭喜窗口显示失败：" + $_.Exception.Message + " | " + $_.InvocationInfo.PositionMessage)
@@ -548,6 +571,14 @@ function Invoke-DailyReminder {
         $marked = @(Get-ReminderDayGames -Data $data -Date $todayKey)
         Write-Output ('{0} {1}' -f $todayKey, $(if ($complete) { 'complete' } else { 'incomplete' }))
         Write-Output ('已标记：{0}' -f $(if ($marked.Count -gt 0) { $marked -join '、' } else { '（无）' }))
+        return
+    }
+
+    if ($ForceCongrats) {
+        # 预览：不看数据也不写数据，直接弹一次道喜窗口
+        Write-ReminderLog '强制预览：直接弹恭喜窗口（不写打卡记录）'
+        $preview = Show-ReminderDialog -Games $games -Completed -Preview
+        Write-ReminderLog ('恭喜窗口预览已关闭，结果：' + $preview.Choice)
         return
     }
 
