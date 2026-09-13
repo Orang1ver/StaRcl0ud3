@@ -675,12 +675,14 @@
                                     <TextBlock Text="关于" FontSize="13.5" FontWeight="SemiBold" Foreground="White"/>
                                     <TextBlock x:Name="AboutText" Margin="0,4,0,14" FontSize="11.5"
                                                Foreground="#FFB7C2DE" TextWrapping="Wrap"/>
-                                    <StackPanel Orientation="Horizontal">
+                                    <WrapPanel Orientation="Horizontal">
                                         <Button x:Name="AboutReminderButton" Height="34"
-                                                Style="{StaticResource OutlineButton}" Content="立即预览提醒弹窗"/>
+                                                Style="{StaticResource OutlineButton}" Content="预览提醒弹窗"/>
+                                        <Button x:Name="PreviewCongratsButton" Height="34" Margin="8,0,0,0"
+                                                Style="{StaticResource OutlineButton}" Content="预览恭喜弹窗"/>
                                         <Button x:Name="OpenFolderButton" Height="34" Margin="8,0,0,0"
                                                 Style="{StaticResource OutlineButton}" Content="打开程序目录"/>
-                                    </StackPanel>
+                                    </WrapPanel>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
