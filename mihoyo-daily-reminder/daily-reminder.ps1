@@ -5,8 +5,9 @@
 
 .DESCRIPTION
   每天 23:30 由计划任务调用。先看今天的打卡数据：
-    - 已经在桌面程序里标记过“三款全部完成” -> 静默退出，不打扰你；
-    - 还有没完成的 -> 弹出卡片窗口，可以点卡片标记完成、启动游戏。
+    - 还没清完 -> 弹出卡片窗口，可以点卡片标记完成、启动游戏；
+    - 已经全部完成 -> 照样弹窗，但弹的是「恭喜完成」的庆祝层（彩带 + 徽章 + 今日收入），
+      这一步不会再催你清任务；点「收下祝福」关掉，点「回去再检查一下」能翻到下面的卡片。
   弹窗里的勾选同样写进 history.json，和桌面程序共用一份数据。
 
 .PARAMETER CheckOnly
@@ -14,7 +15,11 @@
 .PARAMETER CheckComplete
   只打印今天的完成状态（complete / incomplete）后退出。
 .PARAMETER Force
-  忽略“今天已完成”的判断，强制弹窗。
+  忽略“今天已完成”的判断，强制弹普通的提醒窗口（给“立即预览提醒弹窗”用；
+  已经完成的日子加它也不会进恭喜模式）。
+.PARAMETER SkipWhenDone
+  今天已经全部完成时直接静默退出，不弹恭喜窗口（看门进程回来时用，
+  免得玩完刚关游戏又被恭喜一次）。
 .PARAMETER SnoozeMinutes
   点“稍后提醒”后等待的分钟数，默认 10 分钟。
 .PARAMETER DelaySeconds
@@ -34,6 +39,7 @@ param(
     [switch]$CheckComplete,
     [switch]$Force,
     [switch]$NoRun,
+    [switch]$SkipWhenDone,
     [int]$SnoozeMinutes = 10,
     [int]$DelaySeconds = 0
 )
@@ -132,6 +138,36 @@ function Show-ReminderCelebration {
     }
 }
 
+function Show-ReminderCongrats {
+    <#
+    23:30 的那一趟三款已经清完了：弹的是道喜，不是催任务。
+    庆祝层直接复用，只把标题 / 副标题换成“已经完成”的说法。
+    #>
+    param($Window)
+
+    Show-ReminderCelebration -Window $Window
+
+    $titleText = $Window.FindName('CelebrationTitle')
+    if ($titleText) { $titleText.Text = '恭喜，今日任务全部完成！' }
+
+    $subtitle = $Window.FindName('CelebrationSubtitle')
+    if ($subtitle) { $subtitle.Text = '三款游戏一个都没落下，今天的奖励已经入账。明天 23:30 再见。' }
+}
+
+function Set-ReminderCongratsHeader {
+    <# 恭喜模式：把卡片窗口的头部文案也换成道喜的话（点「回去再检查一下」会看到它） #>
+    param($Window)
+
+    $tag = $Window.FindName('HeaderTagText')
+    if ($tag) { $tag.Text = '今日打卡 · 已经完成' }
+
+    $title = $Window.FindName('HeaderTitleText')
+    if ($title) { $title.Text = '恭喜，今天全部清完！' }
+
+    $subtitle = $Window.FindName('HeaderSubtitleText')
+    if ($subtitle) { $subtitle.Text = '原神 · 星穹铁道 · 绝区零 三款都完成了，奖励已经入账。' }
+}
+
 function Hide-ReminderCelebration {
     param($Window)
 
@@ -177,7 +213,11 @@ function Show-ReminderStatsDialog {
 }
 
 function Show-ReminderDialog {
-    param($Games)
+    <#
+    -Completed：这次进来的时候三款就已经清完了（23:30 那道检查），
+    弹的是「恭喜完成」，所以藏掉催任务的按钮、开场就把庆祝层铺上去。
+    #>
+    param($Games, [switch]$Completed)
 
     Add-Type -AssemblyName PresentationFramework
     Add-Type -AssemblyName PresentationCore
@@ -339,6 +379,26 @@ function Show-ReminderDialog {
         Show-ReminderStatsDialog -Owner $script:dialogWindow
     })
 
+    if ($Completed) {
+        # 三款早就清完了：藏掉“启动未完成的游戏 / 稍后提醒”，换成道喜的样子
+        $launchButton.Visibility = 'Collapsed'
+        $launchButton.IsDefault = $false          # 让回车落到「收下祝福」上
+        $snoozeButton.Visibility = 'Collapsed'
+        $snoozeSep = $window.FindName('SnoozeSep')
+        if ($snoozeSep) { $snoozeSep.Visibility = 'Collapsed' }
+        $doneButton.Content = '知道了'
+        Set-ReminderCongratsHeader -Window $window
+        # 等窗口显示出来再铺庆祝层：这时候才有真实尺寸，彩带不会挤成一团
+        $window.Add_Loaded({
+            try {
+                Show-ReminderCongrats -Window $script:dialogWindow
+            }
+            catch {
+                Write-ReminderLog ("恭喜窗口显示失败：" + $_.Exception.Message + " | " + $_.InvocationInfo.PositionMessage)
+            }
+        })
+    }
+
     $null = $window.ShowDialog()
 
     $checkedNames = @()
@@ -492,7 +552,14 @@ function Invoke-DailyReminder {
     }
 
     if ((-not $Force) -and (Test-ReminderDayComplete -Data $data -Date $todayKey)) {
-        Write-ReminderLog "今天（$todayKey）三款全部完成，跳过提醒"
+        if ($SkipWhenDone) {
+            Write-ReminderLog "今天（$todayKey）三款全部完成，静默退出（本次带 -SkipWhenDone）"
+            return
+        }
+        # 三款都清完了也照样弹，只是弹的是道喜
+        Write-ReminderLog "今天（$todayKey）三款全部完成，弹出恭喜窗口"
+        $congrats = Show-ReminderDialog -Games $games -Completed
+        Write-ReminderLog ("恭喜窗口已关闭，结果：" + $congrats.Choice)
         return
     }
 
