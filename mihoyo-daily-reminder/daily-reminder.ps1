@@ -205,6 +205,7 @@ function Show-ReminderStatsDialog {
     Update-ReminderStatsVisuals -Window $window -Data $data
 
     Enable-ReminderWindow -Window $window
+    Enable-ReminderSoftTopmost -Window $window
     $okButton = $window.FindName('OKButton')
     $okButton.Add_Click({ $window.Close() })
 
@@ -315,6 +316,7 @@ function Show-ReminderDialog {
     Update-ReminderStreakLabel -Window $window
 
     Enable-ReminderWindow -Window $window
+    Enable-ReminderSoftTopmost -Window $window
 
     $closeButton = $window.FindName('CloseButton')
     $launchButton = $window.FindName('LaunchButton')
@@ -525,6 +527,7 @@ function Show-LaunchResultDialog {
     }
 
     Enable-ReminderWindow -Window $window
+    Enable-ReminderSoftTopmost -Window $window
 
     $okButton = $window.FindName('OKButton')
     $okButton.Add_Click({

@@ -416,6 +416,29 @@ function Add-ReminderDragSupport {
     })
 }
 
+function Enable-ReminderSoftTopmost {
+    <#
+    弹窗的置顶策略：弹出来的时候在最上面（免得正打着游戏看不见），
+    但你只要切到别的窗口，它立刻取消置顶让开，不再赖在人家头上。
+    再点回弹窗，它又会抬上来。
+
+    注意：这是「软置顶」。别改成用 Win32 SetWindowPos 定时重抬的那种硬置顶，
+    用户明确说过强制置顶很烦。
+    #>
+    param($Window)
+
+    if (-not $Window) { return }
+
+    $Window.Topmost = $true
+
+    # Activated / Deactivated 的脚本块要 GetNewClosure()，
+    # 不然函数返回后 $Window 就丢了，弹窗会一直卡在置顶状态。
+    $raise = { $Window.Topmost = $true }.GetNewClosure()
+    $drop = { $Window.Topmost = $false }.GetNewClosure()
+    $Window.Add_Activated($raise)
+    $Window.Add_Deactivated($drop)
+}
+
 function Enable-ReminderWindow {
     <#
     统一处理无边框窗口：拖动 + 关闭按钮（如果界面里有 CloseButton）。
