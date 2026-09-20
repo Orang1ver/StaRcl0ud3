@@ -261,14 +261,26 @@ function Update-DesktopGameCard {
     $toggle.IsEnabled = $true
     $toggle.Content = '标记完成'
     $launch.IsEnabled = $true
-    $launch.Content = '启动'
+    # 按钮上写清从哪儿启动：星铁/绝区零走 XXMI（模组），原神走官方
+    if ($game.Via -and $game.Via -ne '官方') {
+        $launch.Content = '启动 · XXMI'
+    }
+    else {
+        $launch.Content = '启动'
+    }
 
     if (-not $game.Found) {
         $card.Opacity = 0.6
         $pill.Background = New-UiBrush '#26000000'
         $pillText.Text = '未找到'
         $pillText.Foreground = New-UiBrush '#FFFFC9BE'
-        $status.Text = '没找到游戏文件，先用米哈游启动器进一次游戏'
+        # 星铁/绝区零没找到 = XXMI 里还没选过这款游戏的目录
+        if ($game.Via -and $game.Via -ne '官方') {
+            $status.Text = '没找到游戏目录，先在 XXMI 里选一次这款游戏'
+        }
+        else {
+            $status.Text = '没找到游戏文件，先用米哈游启动器进一次游戏'
+        }
         $status.Foreground = New-UiBrush '#FFF6AEA3'
         $launch.IsEnabled = $false
         $launch.Content = '未找到'
@@ -741,7 +753,12 @@ function Start-DesktopGame {
     $game = $script:games[$Index]
 
     if (-not $game.Found) {
-        Show-DesktopToast -Text ('没找到「{0}」的游戏文件，先用米哈游启动器进一次游戏。' -f $game.Display) -Kind 'fail'
+        if ($game.Via -and $game.Via -ne '官方') {
+            Show-DesktopToast -Text ('没找到「{0}」的游戏目录，先在 XXMI 里选一次这款游戏。' -f $game.Display) -Kind 'fail'
+        }
+        else {
+            Show-DesktopToast -Text ('没找到「{0}」的游戏文件，先用米哈游启动器进一次游戏。' -f $game.Display) -Kind 'fail'
+        }
         return
     }
     if (Test-GameRunning -ProcessName $game.ProcessName) {
@@ -751,11 +768,16 @@ function Start-DesktopGame {
     }
 
     try {
-        $folder = Split-Path -Path $game.ExePath -Parent
-        Start-Process -FilePath $game.ExePath -WorkingDirectory $folder
-        Show-DesktopToast -Text ('正在启动「{0}」，清完记得回来标记完成。' -f $game.Display) -Kind 'ok'
+        $null = Start-ReminderGame -Game $game
+        if ($game.Via -and $game.Via -ne '官方') {
+            Show-DesktopToast -Text ('正在从 {0} 启动「{1}」，清完记得回来标记完成。' -f $game.Via, $game.Display) -Kind 'ok'
+        }
+        else {
+            Show-DesktopToast -Text ('正在启动「{0}」，清完记得回来标记完成。' -f $game.Display) -Kind 'ok'
+        }
         Write-ReminderLog ('桌面程序：启动 ' + $game.Display)
-        Start-DesktopGameWatcher -ProcessNames @($game.ProcessName)
+        # 走 XXMI 的话连 XXMI Launcher 一起盯（清单在 Get-GameList 的 WatchNames 里）
+        Start-DesktopGameWatcher -ProcessNames @($game.WatchNames)
     }
     catch {
         Show-DesktopToast -Text ('「{0}」启动失败：{1}' -f $game.Display, $_.Exception.Message) -Kind 'fail'
@@ -794,7 +816,7 @@ function Invoke-DesktopLaunchMissing {
     for ($i = 0; $i -lt @($script:games).Count; $i++) {
         if ($script:states[$i]) { continue }
         if (-not $script:games[$i].Found) { continue }
-        $watchNames += $script:games[$i].ProcessName
+        $watchNames += @($script:games[$i].WatchNames)
     }
     Start-DesktopGameWatcher -ProcessNames $watchNames
 
@@ -1305,7 +1327,11 @@ function Show-DesktopApp {
 if ($CheckOnly) {
     foreach ($game in @(Get-GameList)) {
         $status = '未找到'
-        if ($game.Found) { $status = $game.ExePath }
+        if ($game.Found) {
+            # 按启动方式显示：走 XXMI 的两款，路径都是 XXMI Launcher.exe，光看路径分不出来
+            $status = '[{0}] {1}' -f $game.Via, $game.ExePath
+            if ($game.Via -and $game.Via -ne '官方') { $status += ' ' + (@($game.ExeArguments) -join ' ') }
+        }
         $running = ''
         if ($game.Running) { $running = '（运行中）' }
         Write-Output ('{0,-16} {1} {2}' -f $game.Display, $status, $running)

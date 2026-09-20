@@ -559,7 +559,12 @@ function Invoke-DailyReminder {
 
     if ($CheckOnly) {
         foreach ($game in $games) {
-            $status = if ($game.Found) { $game.ExePath } else { '未找到' }
+            $status = '未找到'
+            if ($game.Found) {
+                # 按启动方式显示：走 XXMI 的两款，路径都是 XXMI Launcher.exe，光看路径分不出来
+                $status = '[{0}] {1}' -f $game.Via, $game.ExePath
+                if ($game.Via -and $game.Via -ne '官方') { $status += ' ' + (@($game.ExeArguments) -join ' ') }
+            }
             $running = if ($game.Running) { '（运行中）' } else { '' }
             Write-Output ("{0,-16} {1} {2}" -f $game.Display, $status, $running)
         }
@@ -627,7 +632,7 @@ function Invoke-DailyReminder {
         foreach ($game in $games) {
             if ($result.Checked -contains $game.Display) { continue }
             if (-not $game.Found) { continue }
-            $watchNames += $game.ProcessName
+            $watchNames += @($game.WatchNames)
         }
         if ($watchMode -and $watchMode -ne 'none' -and $watchNames.Count -gt 0) {
             $null = Start-ReminderWatcher -ProcessNames $watchNames -Mode $watchMode
