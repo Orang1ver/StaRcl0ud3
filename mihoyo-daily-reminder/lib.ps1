@@ -11,10 +11,29 @@
     . (Join-Path $PSScriptRoot 'lib.ps1')
 #>
 
+# 三款游戏的显示名（打卡记录按这个顺序判断“整日完成”）
 function Get-ReminderGames {
-    <# 三款游戏的显示名（打卡记录按这个顺序判断“整日完成”） #>
     return @('原神', '崩坏：星穹铁道', '绝区零')
 }
+
+# XXMI Launcher 的安装目录：星铁（SRMI）/ 绝区零（ZZMI）从这里启动，不走官方 exe。
+# 读脚本所在目录下的 xxmi-path.txt 可以覆盖（用户装在别处时不用改代码）。
+function Get-XxmiRoot {
+    $override = $null
+    if ($PSScriptRoot) {
+        $overrideFile = Join-Path $PSScriptRoot 'xxmi-path.txt'
+        if (Test-Path -LiteralPath $overrideFile) {
+            try {
+                $override = (Get-Content -LiteralPath $overrideFile -Raw -Encoding UTF8).Trim()
+            }
+            catch { $override = $null }
+        }
+    }
+    if ($override) { return $override }
+    return 'D:\XXMI launcher'
+}
+
+$script:XxmiRoot = Get-XxmiRoot
 
 function Get-ReminderDataPaths {
     $paths = New-Object System.Collections.Generic.List[string]
@@ -294,6 +313,62 @@ function Get-LauncherRoot {
     return $null
 }
 
+function Get-XxmiLaunch {
+    <#
+    找 XXMI Launcher（模型替换工具的启动器），并返回用哪个导入器启动这款游戏。
+
+    崩坏：星穹铁道 -> SRMI，绝区零 -> ZZMI。用户要求这两款**走 XXMI 启动**，
+    而不是官方启动器直接拉起 StarRail.exe / ZenlessZoneZero.exe ——
+    直接拉 exe 不会加载模组，XXMI 才会把模组注入进去。
+
+    返回：@{ ExePath; Arguments; Importer }，没装（或该导入器没启用）就返回 $null。
+    #>
+    param([string]$Importer)
+
+    if (-not $Importer) { return $null }
+    if (-not (Test-Path -LiteralPath $script:XxmiRoot)) { return $null }
+
+    $exePath = Join-Path $script:XxmiRoot 'Resources\Bin\XXMI Launcher.exe'
+    if (-not (Test-Path -LiteralPath $exePath)) { return $null }
+
+    # 只有配置里启用过的导入器才敢用（没启用的启动会直接失败）
+    $configPath = Join-Path $script:XxmiRoot 'XXMI Launcher Config.json'
+    try {
+        $config = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $enabled = @($config.Launcher.enabled_importers)
+        if ($enabled -notcontains $Importer) { return $null }
+    }
+    catch {
+        # 配置读不了/格式变了：XXMI 装在那儿就照常用，交给它自己报错
+    }
+
+    return @{
+        ExePath   = $exePath
+        Arguments = @('--nogui', '--xxmi', $Importer)
+        Importer  = $Importer
+    }
+}
+
+function Start-ReminderGame {
+    <#
+    启动一款游戏，算好参数（不用调用方拼引号、也不用自己处理 -ArgumentList 的空值）。
+    $Game 里带 ExeArguments 的话（也就是 XXMI 那条）会一起传过去。
+    #>
+    param($Game)
+
+    $exePath = $Game.ExePath
+    if (-not $exePath) { throw '这款游戏没有可用的启动路径。' }
+
+    $folder = Split-Path -Path $exePath -Parent
+    if (-not (Test-Path -LiteralPath $folder)) { $folder = $null }
+
+    $parameters = @{ FilePath = $exePath }
+    if ($folder) { $parameters.WorkingDirectory = $folder }
+    if (@($Game.ExeArguments).Count -gt 0) { $parameters.ArgumentList = @($Game.ExeArguments) }
+
+    return (Start-Process @parameters)
+}
+
 function Resolve-GameExecutable {
     param(
         [string]$LauncherRoot,
@@ -332,25 +407,47 @@ function Get-GameList {
     }
 
     $definitions = @(
-        @{ Display = '原神';           Folder = 'Genshin Impact Game';    Exe = 'YuanShen.exe' }
-        @{ Display = '崩坏：星穹铁道'; Folder = 'Star Rail Game';         Exe = 'StarRail.exe' }
-        @{ Display = '绝区零';         Folder = 'ZenlessZoneZero Game';   Exe = 'ZenlessZoneZero.exe' }
+        @{ Display = '原神';           Folder = 'Genshin Impact Game';    Exe = 'YuanShen.exe';         Via = $null }
+        @{ Display = '崩坏：星穹铁道'; Folder = 'Star Rail Game';         Exe = 'StarRail.exe';         Via = 'SRMI' }
+        @{ Display = '绝区零';         Folder = 'ZenlessZoneZero Game';   Exe = 'ZenlessZoneZero.exe';  Via = 'ZZMI' }
     )
 
     $games = @()
     foreach ($def in $definitions) {
-        $exePath = $null
+        # 官方路径只用来判断"这款装没装"和显示，真正启动走下面那步
+        $officialPath = $null
         if ($root) {
-            $exePath = Resolve-GameExecutable -LauncherRoot $root -SubFolder $def.Folder -ExeName $def.Exe
+            $officialPath = Resolve-GameExecutable -LauncherRoot $root -SubFolder $def.Folder -ExeName $def.Exe
         }
+
+        # 星铁 / 绝区零：装了 XXMI 就用它启动（模组注入），没装才退回官方 exe
+        $exePath = $officialPath
+        $exeArguments = @()
+        $via = '官方'
+        $xxmi = Get-XxmiLaunch -Importer $def.Via
+        if ($xxmi) {
+            $exePath = $xxmi.ExePath
+            $exeArguments = @($xxmi.Arguments)
+            $via = 'XXMI · ' + $xxmi.Importer
+        }
+
         $processName = [System.IO.Path]::GetFileNameWithoutExtension($def.Exe)
+        # 看门进程要盯的进程：走 XXMI 时先看到的是 XXMI Launcher，游戏本体要晚一会儿才起来，
+        # 两个都盯上，免得"启动器刚退、游戏还没起来"这段空档被当成游戏已经退了。
+        $watchProcessNames = @($processName)
+        if ($xxmi) { $watchProcessNames += 'XXMI Launcher' }
+
         $games += [pscustomobject]@{
-            Display     = $def.Display
-            ExeName     = $def.Exe
-            ExePath     = $exePath
-            ProcessName = $processName
-            Found       = [bool]$exePath
-            Running     = Test-GameRunning -ProcessName $processName
+            Display      = $def.Display
+            ExeName      = $def.Exe
+            ExePath      = $exePath
+            ExeArguments = $exeArguments
+            Via          = $via
+            OfficialPath = $officialPath
+            ProcessName  = $processName
+            WatchNames   = $watchProcessNames
+            Found        = [bool]$exePath
+            Running      = Test-GameRunning -ProcessName $processName
         }
     }
     return $games
@@ -665,8 +762,7 @@ function Start-MissingGames {
             continue
         }
         try {
-            $folder = Split-Path -Path $game.ExePath -Parent
-            Start-Process -FilePath $game.ExePath -WorkingDirectory $folder
+            $null = Start-ReminderGame -Game $game
             $launched += $game.Display
         }
         catch {

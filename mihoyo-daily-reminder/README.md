@@ -44,6 +44,12 @@ exe 是**独立宿主**：它把 Windows 自带的 PowerShell 引擎**装进自�
   - 顶部显示日期、今日进度（`n / 3`）和进度条。
   - 每款游戏一张卡片：圆形图标、完成状态、右侧「标记完成 / 撤销标记」和「启动」。
   - 游戏正在运行时按钮会变成「运行中」，不会重复启动。
+  - 星穹铁道 / 绝区零的按钮写的是「启动 · XXMI」：这两款**从 XXMI Launcher 启动**
+    （`XXMI Launcher.exe --nogui --xxmi SRMI|ZZMI`），这样模组才会被注入进去 ——
+    官方 exe 直接拉起来是不带模组的，所以这两款不再走官方 exe。
+  - 原神仍然是官方 `YuanShen.exe` 直接启动。
+  - XXMI 没装、或者它没启用对应的导入器（SRMI / ZZMI）时，会自动退回官方 exe 启动，
+    按钮上的「· XXMI」也会消失，功能不受影响。
   - 底部三个按钮：`全部完成，收下今日打卡`、`启动没清完的`、`10 分钟后再提醒`。
   - 三款都清完会自动放庆祝动画（彩带 + 徽章 + 战绩）。
 - **打卡记录**：连续天数 / 累计天数 / 历史最长连续、当前称号、下一枚徽章、4 枚徽章墙、最近 5 周日历、最近 4 次打卡。
@@ -159,7 +165,8 @@ powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\daily-reminder.ps1 -F
 | `watch-games.ps1` | 看门进程：盯着游戏进程，退出后重新弹提醒 / 唤起桌面程序 |
 | `stats.xaml` | 打卡记录窗口界面（桌面程序和弹窗共用） |
 | `result.xaml` | 启动游戏后的结果窗口（在这里选「游戏关掉之后」怎么办） |
-| `lib.ps1` | 共用库：游戏路径发现与启动、打卡数据读写、统计、庆祝动画、计划任务注册 |
+| `lib.ps1` | 共用库：游戏路径发现与启动（含 XXMI 那一路）、打卡数据读写、统计、庆祝动画、计划任务注册 |
+| `xxmi-path.txt` | 可选：XXMI Launcher 装在非默认位置（默认 `D:\XXMI launcher`）时，在这里写一行它的路径 |
 | `setup.ps1` | 注册 / 查看 / 删除计划任务 |
 | `history.json` | 打卡记录（自动生成） |
 | `watch.json` | 看门设置（自动生成，第一次改选项时写入） |
@@ -281,7 +288,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build\check-contrast.ps1
 - 需要 Windows 10 / 11，游戏通过米哈游启动器安装（本机检测到 `D:\miHoYo Launcher`）。
 - 23:30 时电脑要开着、并且已登录 Windows 才会弹窗；如果当时在休眠/关机，任务会在下次开机后尽快补提醒（`StartWhenAvailable`）。
 - 界面基于 WPF，脚本要以单线程单元运行，所以命令行里请带 `-STA`（`.cmd` 和计划任务里已经带上了）。
-- 游戏直接启动本体程序（`YuanShen.exe` / `StarRail.exe` / `ZenlessZoneZero.exe`），不经过启动器；需要更新时启动器仍会提示。
-- 游戏安装位置变化后会自动从注册表重新定位；找不到时卡片会显示「未找到游戏文件」。
+- 启动方式：原神直接跑本体 `YuanShen.exe`；星穹铁道（SRMI）和绝区零（ZZMI）通过
+  **XXMI Launcher** 启动，好让模组注入生效。XXMI 装在 `D:\XXMI launcher`（装在别处就
+  在程序目录写一行 `xxmi-path.txt` 填它的路径）；找不到 XXMI 时自动退回官方 exe，
+  需要更新时官方启动器仍会提示。
+- 游戏安装位置变化后会自动从注册表重新定位；找不到时卡片会显示「未找到」，
+  星铁 / 绝区零这一条通常意味着还没在 XXMI 里选过这款游戏的目录。
 - 改外观：桌面程序改 `desktop-app.xaml`，提醒弹窗改 `reminder.xaml`。
 - 日志：`%TEMP%\mihoyo-daily-reminder.log`。
