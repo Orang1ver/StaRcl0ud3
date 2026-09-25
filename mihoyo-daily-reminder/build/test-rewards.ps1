@@ -166,7 +166,40 @@ Check '空数据连击' $empty.Streak 0
 Check '空数据累计天数' $empty.TotalDays 0
 
 Write-Output ''
-Write-Output '=== 11. 真实记录文件有没有被动过 ==='
+Write-Output '=== 11. 补录：昨天完成但忘了记 ==='
+$bfData = [pscustomobject]@{ Version = 3; Days = @{}; Redemptions = @(); Path = $tempHistory }
+$null = Set-ReminderDayGames -Data $bfData -Date $todayKey -Games @('原神', '崩坏：星穹铁道', '绝区零')
+$beforeBackfill = Get-RewardState -Rules $rules -Data $bfData -Today $today
+Check '补录前连击（只有今天）' $beforeBackfill.Streak 1
+Check '补录前余额' $beforeBackfill.Balance 45
+
+$null = Set-ReminderDayGames -Data $bfData -Date $today.AddDays(-1).ToString('yyyy-MM-dd') -Games @('原神', '崩坏：星穹铁道', '绝区零')
+$afterBackfill = Get-RewardState -Rules $rules -Data $bfData -Today $today
+Check '补录昨天后连击接上' $afterBackfill.Streak 2
+# 昨天补录后成了 2 连，当天收入按「当天的连击倍率」算；总余额是先累加再取整
+$backfillDayCoin = 45 * (Get-RewardMultiplier -Rules $rules -Streak 2)
+Check '补录后余额（今天 45 + 昨天按当天倍率补发）' $afterBackfill.Balance ([int][Math]::Round(45 + $backfillDayCoin))
+Check '补录后累计天数' $afterBackfill.TotalDays 2
+Check '补录写进了临时记录文件' (Test-Path -LiteralPath $tempHistory) $true
+
+Write-Output ''
+Write-Output '=== 12. 补录的去重 / 删除 / 改错 ==='
+$dedupe = [pscustomobject]@{ Version = 3; Days = @{}; Redemptions = @(); Path = $tempHistory }
+$null = Set-ReminderDayGames -Data $dedupe -Date '2026-09-01' -Games @('原神', '原神', '崩坏：星穹铁道')
+Check '同一天重复记录会去重' (@($dedupe.Days['2026-09-01']).Count) 2
+
+$null = Set-ReminderDayGames -Data $dedupe -Date '2026-09-01' -Games @()
+Check '全部取消勾选后这一天从记录里删掉' ($dedupe.Days.ContainsKey('2026-09-01')) $false
+
+$fix = [pscustomobject]@{ Version = 3; Days = @{}; Redemptions = @(); Path = $tempHistory }
+$null = Set-ReminderDayGames -Data $fix -Date '2026-09-01' -Games @('原神', '崩坏：星穹铁道', '绝区零')
+$null = Set-ReminderDayGames -Data $fix -Date '2026-09-01' -Games @('原神')
+$fixed = Get-RewardState -Rules $rules -Data $fix -Today $today
+Check '记错改成部分完成：不再算全清' $fixed.TotalDays 0
+Check '部分完成也按当天倍率发了币' $fixed.Balance 10
+
+Write-Output ''
+Write-Output '=== 13. 真实记录文件有没有被动过 ==='
 $realHashAfter = $null
 if (Test-Path -LiteralPath $realHistory) {
     $realHashAfter = (Get-FileHash -LiteralPath $realHistory -Algorithm SHA256).Hash

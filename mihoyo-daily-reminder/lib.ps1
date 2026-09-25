@@ -212,6 +212,31 @@ function Set-ReminderDayComplete {
     return (Save-ReminderData -Data $Data)
 }
 
+function Set-ReminderDayGames {
+    <#
+    直接设置某天完成的游戏列表（补录 / 修改历史记录用）。
+    列表为空时把这一天从记录里删掉；列表里的游戏名会去重。
+    #>
+    param($Data, [string]$Date, [string[]]$Games)
+
+    if (-not $Data) { $Data = Read-ReminderData }
+
+    $list = New-Object System.Collections.Generic.List[string]
+    foreach ($g in @($Games)) {
+        $name = [string]$g
+        if ($name -and -not $list.Contains($name)) { $list.Add($name) }
+    }
+
+    if ($list.Count -eq 0) {
+        if ($Data.Days.ContainsKey($Date)) { [void]$Data.Days.Remove($Date) }
+    }
+    else {
+        $Data.Days[$Date] = @($list)
+    }
+
+    return (Save-ReminderData -Data $Data)
+}
+
 function Test-ReminderDayComplete {
     param($Data, [string]$Date)
 
