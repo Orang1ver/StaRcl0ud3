@@ -389,6 +389,244 @@ function Refresh-DesktopRecords {
     Update-ReminderStatsVisuals -Window $script:window -Data $script:data
 }
 
+# ============================================================
+#  补录 / 修改历史打卡
+# ============================================================
+$script:BackfillDayCount = 14
+
+$script:BackfillRowXaml = @"
+<Border xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        CornerRadius="10" Background="#1FFFFFFF" BorderBrush="#24FFFFFF"
+        BorderThickness="1" Padding="12,7" Margin="0,0,0,7">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+            <TextBlock x:Name="RowDate" FontSize="12.5" FontWeight="SemiBold"
+                       Foreground="#FFFFFFFF" Typography.NumeralAlignment="Tabular"/>
+            <TextBlock x:Name="RowState" FontSize="10.5" Foreground="#FFB7C2DE" Margin="0,1,0,0"/>
+        </StackPanel>
+        <StackPanel x:Name="RowToggles" Grid.Column="1" Orientation="Horizontal"
+                    VerticalAlignment="Center"/>
+    </Grid>
+</Border>
+"@
+
+$script:BackfillToggleXaml = @"
+<Button xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        MinWidth="74" Height="29" Margin="6,0,0,0" FontSize="11.5" Cursor="Hand" Focusable="False">
+    <Button.Template>
+        <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="9,0">
+                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter TargetName="Bd" Property="Opacity" Value="0.85"/>
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+    </Button.Template>
+</Button>
+"@
+
+function Get-DesktopBackfillShortName {
+    param([string]$Game)
+    if ($Game -eq '崩坏：星穹铁道') { return '星穹铁道' }
+    return $Game
+}
+
+function Update-BackfillToggleVisual {
+    param($Button)
+
+    $parts = ([string]$Button.Tag).Split('|', 2)
+    $done = $script:backfillEdits[$parts[0]][$parts[1]]
+    $short = Get-DesktopBackfillShortName -Game $parts[1]
+
+    if ($done) {
+        $Button.Content = '✓ ' + $short
+        $Button.Background = New-UiBrush '#2EF2C463'
+        $Button.BorderBrush = New-UiBrush '#8CF2C463'
+        $Button.Foreground = New-UiBrush '#FFFFE3A4'
+    }
+    else {
+        $Button.Content = $short
+        $Button.Background = New-UiBrush '#14FFFFFF'
+        $Button.BorderBrush = New-UiBrush '#22FFFFFF'
+        $Button.Foreground = New-UiBrush '#FFB7C2DE'
+    }
+}
+
+function Update-BackfillStateText {
+    <# 行首那行状态小字：跟着三个勾选走 #>
+    param([string]$Key)
+
+    $text = $script:backfillStateTexts[$Key]
+    if (-not $text) { return }
+
+    $count = 0
+    foreach ($v in $script:backfillEdits[$Key].Values) { if ($v) { $count++ } }
+
+    if ($count -ge 3) {
+        $text.Text = '三款全清'
+        $text.Foreground = New-UiBrush '#FFFFD98A'
+    }
+    elseif ($count -gt 0) {
+        $text.Text = '清了 {0} 款' -f $count
+        $text.Foreground = New-UiBrush '#FFC9E1FF'
+    }
+    else {
+        $text.Text = '没记录'
+        $text.Foreground = New-UiBrush '#FFA6B1CE'
+    }
+}
+
+function Sync-DesktopAfterDataChange {
+    <# 打卡数据变了（补录保存、外部改文件等）之后，把主窗口相关的地方都刷一遍 #>
+    $script:data = Read-ReminderData
+    $marked = @(Get-ReminderDayGames -Data $script:data -Date $script:todayKey)
+    for ($i = 0; $i -lt @($script:games).Count; $i++) {
+        $script:states[$i] = ($marked -contains $script:games[$i].Display)
+    }
+    Update-DesktopToday
+    Update-DesktopProgressBar
+    Update-DesktopXpBar
+    Refresh-DesktopRecords
+}
+
+function New-DesktopBackfillWindow {
+    <#
+    构建补录窗口并按当前记录填好（不显示），返回窗口对象。
+    编辑只改内存快照，点保存才写文件，取消就直接丢掉。
+    #>
+    $xamlPath = Join-Path $PSScriptRoot 'backfill.xaml'
+    if (-not (Test-Path -LiteralPath $xamlPath)) {
+        throw '找不到补录窗口文件 backfill.xaml'
+    }
+
+    $xaml = [System.IO.File]::ReadAllText($xamlPath, [System.Text.Encoding]::UTF8)
+    $bf = [System.Windows.Markup.XamlReader]::Parse($xaml)
+    $script:backfillWindow = $bf
+    Set-ReminderWindowIcon -Window $bf
+
+    # —— 从当前记录做一份快照：日期 → @{ 游戏名 = 勾/没勾 } ——
+    # 最新的在最上面（补录最常补的就是今天和昨天）。
+    $today = Get-ReminderToday
+    $todayKey = $today.ToString('yyyy-MM-dd')
+    $script:backfillDays = New-Object System.Collections.Generic.List[string]
+    $script:backfillEdits = @{}
+    $script:backfillStateTexts = @{}
+    for ($offset = 0; $offset -lt $script:BackfillDayCount; $offset++) {
+        $key = $today.AddDays(-$offset).ToString('yyyy-MM-dd')
+        $script:backfillDays.Add($key)
+        $marked = @(Get-ReminderDayGames -Data $script:data -Date $key)
+        $edit = @{}
+        foreach ($g in (Get-ReminderGames)) { $edit[$g] = ($marked -contains $g) }
+        $script:backfillEdits[$key] = $edit
+    }
+
+    $hint = $bf.FindName('BackfillHintText')
+    if ($hint) {
+        $hint.Text = ('最近 {0} 天（游戏每天 04:00 刷新，今天算 {1}）' -f $script:BackfillDayCount, (Get-DesktopDateLabel -Date $today))
+    }
+
+    # —— 一天一行，每款游戏一个可点的勾选按钮 ——
+    $rowsPanel = $bf.FindName('BackfillRows')
+    $rowsPanel.Children.Clear()
+    foreach ($key in $script:backfillDays) {
+        $row = [System.Windows.Markup.XamlReader]::Parse($script:BackfillRowXaml)
+        $dateText = $row.FindName('RowDate')
+        $stateText = $row.FindName('RowState')
+        $toggles = $row.FindName('RowToggles')
+        $script:backfillStateTexts[$key] = $stateText
+
+        $day = [datetime]::ParseExact($key, 'yyyy-MM-dd', $null)
+        $label = Get-DesktopDateLabel -Date $day
+        if ($key -eq $todayKey) { $label += '（今天）' }
+        $dateText.Text = $label
+
+        foreach ($g in (Get-ReminderGames)) {
+            $btn = [System.Windows.Markup.XamlReader]::Parse($script:BackfillToggleXaml)
+            $btn.Tag = '{0}|{1}' -f $key, $g
+            $btn.Add_Click({
+                param($sender, $eventArgs)
+                $parts = ([string]$sender.Tag).Split('|', 2)
+                $edit = $script:backfillEdits[$parts[0]]
+                $edit[$parts[1]] = -not $edit[$parts[1]]
+                Update-BackfillToggleVisual -Button $sender
+                Update-BackfillStateText -Key $parts[0]
+            })
+            Update-BackfillToggleVisual -Button $btn
+            $null = $toggles.Children.Add($btn)
+        }
+
+        Update-BackfillStateText -Key $key
+        $null = $rowsPanel.Children.Add($row)
+    }
+
+    $bf.FindName('CancelButton').Add_Click({
+        param($sender, $eventArgs)
+        $script:backfillWindow.Close()
+    })
+    $bf.FindName('SaveButton').Add_Click({
+        param($sender, $eventArgs)
+        Save-DesktopBackfill
+    })
+
+    Enable-ReminderWindow -Window $bf
+    return $bf
+}
+
+function Open-DesktopBackfill {
+    if (-not $script:window) { return }
+
+    try {
+        $bf = New-DesktopBackfillWindow
+    }
+    catch {
+        Show-DesktopToast -Text ('补录窗口打不开：{0}' -f $_.Exception.Message) -Kind 'fail'
+        return
+    }
+
+    $bf.Owner = $script:window
+    $null = $bf.ShowDialog()
+    $script:backfillWindow = $null
+}
+
+function Save-DesktopBackfill {
+    <# 把补录窗口里的快照写回 history.json；只写有变化的天 #>
+    $changed = New-Object System.Collections.Generic.List[string]
+    foreach ($key in $script:backfillDays) {
+        $games = @(Get-ReminderGames | Where-Object { $script:backfillEdits[$key][$_] })
+        $current = @(Get-ReminderDayGames -Data $script:data -Date $key)
+
+        $same = ($current.Count -eq $games.Count)
+        if ($same) {
+            for ($i = 0; $i -lt $games.Count; $i++) {
+                if ($current[$i] -ne $games[$i]) { $same = $false; break }
+            }
+        }
+        if ($same) { continue }
+
+        $null = Set-ReminderDayGames -Data $script:data -Date $key -Games $games
+        $changed.Add($key)
+    }
+
+    if ($changed.Count -gt 0) {
+        Write-ReminderLog ('补录打卡：更新 {0} 天（{1}）' -f $changed.Count, ($changed -join ', '))
+        Sync-DesktopAfterDataChange
+        Show-DesktopToast -Text ('已保存：更新了 {0} 天的记录，代币和 XP 也按当天倍率补上了。' -f $changed.Count) -Kind 'ok'
+    }
+    if ($script:backfillWindow) { $script:backfillWindow.Close() }
+}
+
 function Refresh-DesktopSettings {
     if (-not $script:window) { return }
     $window = $script:window
@@ -1215,6 +1453,12 @@ function New-DesktopWindow {
     $window.FindName('OpenFolderButton').Add_Click({
         param($sender, $eventArgs)
         Open-DesktopAppFolder
+    })
+
+    # ---- 打卡记录页：补录 / 修改 ----
+    $window.FindName('OpenBackfillButton').Add_Click({
+        param($sender, $eventArgs)
+        Open-DesktopBackfill
     })
 
     # ---- 庆祝层 ----

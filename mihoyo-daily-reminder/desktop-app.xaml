@@ -582,8 +582,16 @@
                             <WrapPanel x:Name="BadgesPanel" Margin="0,12,0,0" HorizontalAlignment="Center"/>
 
                             <StackPanel Margin="0,14,0,0">
-                                <TextBlock Text="最近 5 周（整日完成=金色，部分完成=浅金）" FontSize="11.5"
-                                           Foreground="#FFB7C2DE" Margin="0,0,0,7"/>
+                                <Grid Margin="0,0,0,7">
+                                    <TextBlock Text="最近 5 周（整日完成=金色，部分完成=浅金）" FontSize="11.5"
+                                               Foreground="#FFB7C2DE"/>
+                                    <Button x:Name="OpenBackfillButton" Content="＋ 补录 / 修改"
+                                            HorizontalAlignment="Right" Cursor="Hand" FontSize="11.5"
+                                            Foreground="#FFFFDE9E" Background="Transparent"
+                                            BorderThickness="0" Padding="8,2"
+                                            ToolTip="哪天完成了忘了记，在这里补上"
+                                            AutomationProperties.Name="补录或修改历史打卡"/>
+                                </Grid>
                                 <UniformGrid Columns="7">
                                     <TextBlock Text="一" FontSize="10.5" Foreground="#FFA6B1CE" HorizontalAlignment="Center"/>
                                     <TextBlock Text="二" FontSize="10.5" Foreground="#FFA6B1CE" HorizontalAlignment="Center"/>
