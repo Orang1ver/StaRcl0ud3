@@ -52,6 +52,9 @@ exe 是**独立宿主**：它把 Windows 自带的 PowerShell 引擎**装进自�
     按钮上的「· XXMI」也会消失，功能不受影响。
   - 底部三个按钮：`全部完成，收下今日打卡`、`启动没清完的`、`10 分钟后再提醒`。
   - 三款都清完会自动放庆祝动画（彩带 + 徽章 + 战绩）。
+  - 绝区零卡片下面还有一张 **「尘歌壶 · 洞天宝钱（原神）」** 卡：点「刚取完」记下此刻，
+    之后按 30 枚/小时累积、2400 存满（80 小时），实时显示当前币数 / 进度条 / 离存满多久，
+    每分钟自己刷新；存满时状态行会变金色催你去取。详见下面「尘歌壶」一节。
 - **打卡记录**：连续天数 / 累计天数 / 历史最长连续、当前称号、下一枚徽章、4 枚徽章墙、最近 5 周日历、最近 4 次打卡。
   - 「＋ 补录 / 修改」：哪天完成了忘了记，点它在最近 14 天里补上——每天一行、三款游戏各一个勾选按钮，
     保存时只写有变化的日子。补上的天按**当天的连击倍率**补发代币和 XP；取消勾选再保存就能改掉记错的。
@@ -130,6 +133,27 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1 -Remove
 
 这些操作在桌面程序的「设置」页里也能做。
 
+## 尘歌壶 · 洞天宝钱（原神，存满提醒）
+
+洞天宝钱每小时产 30 枚、2400 枚存满（80 小时），游戏里又不给看倒计时，所以这里帮你记：
+
+- **记录**：桌面程序今日页的尘歌壶卡片上点「刚取完」，把此刻记进 `serenitea.json`
+  （只存这一个时间，其余全是推导）。之后每分钟自动重算：当前多少枚、离存满还有多久、
+  预计什么时候满。算错了随时再点一次「刚取完」就重新从 0 开始。
+- **存满提醒**：点「刚取完」时会自动注册一个**一次性**计划任务 `MiHoYo Serenitea Reminder`，
+  到存满时刻弹一个小窗口提醒你去取。窗口里点「刚取完了，重新开始攒」就直接开启下一轮，
+  80 小时后接着提醒。
+- **自动清理**：这个计划任务带过期时间（满点 2 小时后失效、10 分钟后自动删除），
+  不用了也不用在任务计划程序里手动清。
+- **和奖励无关**：宝钱不进 `history.json`，不影响 XP / 代币 / 连击，纯粹是个提醒。
+- 23:30 的提醒弹窗底部也会顺手显示一行宝钱状态（没记录过就不显示）。
+
+想手动看一眼提醒窗口长什么样：
+
+```powershell
+powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\daily-reminder.ps1 -SereniteaFull
+```
+
 ## 打卡奖励机制
 
 - **触发方式**：把三张卡片都点成「已完成」，或者点「全部完成，收下今日打卡」。
@@ -155,6 +179,9 @@ powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\daily-reminder.ps1 -F
 
 # 预览「已经全部完成」时弹的恭喜窗口（不看也不写打卡记录，随便看）
 powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\daily-reminder.ps1 -ForceCongrats
+
+# 预览尘歌壶「洞天宝钱已存满」的小窗口（不会改记录）
+powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\daily-reminder.ps1 -SereniteaFull
 ```
 
 ## 文件说明
@@ -169,14 +196,17 @@ powershell -NoProfile -STA -ExecutionPolicy Bypass -File .\daily-reminder.ps1 -F
 | `stats.xaml` | 打卡记录窗口界面（桌面程序和弹窗共用） |
 | `result.xaml` | 启动游戏后的结果窗口（在这里选「游戏关掉之后」怎么办） |
 | `backfill.xaml` | 补录 / 修改历史打卡的小窗口（打卡记录页里点「＋ 补录 / 修改」） |
+| `serenitea.xaml` | 尘歌壶「洞天宝钱已存满」提醒小窗口 |
 | `lib.ps1` | 共用库：游戏路径发现与启动（含 XXMI 那一路）、打卡数据读写、统计、庆祝动画、计划任务注册 |
 | `xxmi-path.txt` | 可选：XXMI Launcher 装在非默认位置（默认 `D:\XXMI launcher`）时，在这里写一行它的路径 |
 | `setup.ps1` | 注册 / 查看 / 删除计划任务 |
 | `history.json` | 打卡记录（自动生成） |
 | `watch.json` | 看门设置（自动生成，第一次改选项时写入） |
+| `serenitea.json` | 尘歌壶记录：上次取完宝钱的时间（自动生成） |
 | `rewards.json` | 奖励规则：任务分值、连击、里程碑、商店（可直接改） |
 | `build\test-rewards.ps1` | 奖励引擎自检（50 项，含补录） |
 | `build\test-watch.ps1` | 看门进程自检（真起一个假游戏进程，等它退出，18 项） |
+| `build\test-serenitea.ps1` | 尘歌壶宝钱计算 / 记录读写自检（41 项，不碰计划任务） |
 | `assets\app.ico` / `assets\icon-preview.png` | 程序图标（多尺寸） / 各尺寸预览图 |
 | `build\make-icon.ps1` | 重新生成图标 |
 | `build\build-exe.ps1` + `build\Launcher.cs` | 重新编译 exe |

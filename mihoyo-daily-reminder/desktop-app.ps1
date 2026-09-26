@@ -376,6 +376,52 @@ function Update-DesktopToday {
     Update-DesktopProgressBar
 }
 
+function Update-DesktopSerenitea {
+    <#
+    尘歌壶卡片：由上次「取完宝钱」的时间算出现在的币数和离存满多久。
+    时钟定时器每 20 秒刷一次，币数看起来就是自己慢慢在涨的。
+    #>
+    if (-not $script:window) { return }
+    $window = $script:window
+
+    $status = $window.FindName('SereniteaStatus')
+    $coins = $window.FindName('SereniteaCoins')
+    $bar = $window.FindName('SereniteaBar')
+    $card = $window.FindName('SereniteaCard')
+    if (-not $status -or -not $coins -or -not $bar) { return }
+
+    $record = Read-SereniteaData
+    $state = Get-SereniteaState -Record $record
+
+    $trackWidth = 0.0
+    if ($bar.Parent -and $bar.Parent.ActualWidth -gt 0) { $trackWidth = [double]$bar.Parent.ActualWidth }
+
+    if (-not $state.HasRecord) {
+        $coins.Text = ''
+        $status.Text = '取完宝钱点「刚取完」，这里开始帮你数（30 枚/小时 · 2400 存满）'
+        $status.Foreground = New-UiBrush '#FFB7C2DE'
+        $bar.Width = 0
+        if ($card) { $card.ToolTip = $null }
+        return
+    }
+
+    if ($card) {
+        $card.ToolTip = '洞天宝钱每小时产 30 枚，2400 存满（80 小时）。上次取完：' + $state.LastCollected.ToString('MM-dd HH:mm')
+    }
+
+    $bar.Width = [Math]::Round($trackWidth * $state.Progress, 1)
+    $coins.Text = '{0} / {1}' -f $state.Coins, $state.Cap
+
+    if ($state.IsFull) {
+        $status.Text = '已存满！去尘歌壶取一下吧（取完点「刚取完」）'
+        $status.Foreground = New-UiBrush '#FFFFD98A'
+    }
+    else {
+        $status.Text = '再有 {0} 存满（{1:MM-dd HH:mm}）' -f (Get-SereniteaDurationText -Span $state.TimeToFull), $state.FullAt
+        $status.Foreground = New-UiBrush '#FFB7C2DE'
+    }
+}
+
 # ============================================================
 #  打卡记录 / 设置页
 # ============================================================
@@ -1062,6 +1108,24 @@ function Invoke-DesktopLaunchMissing {
     Start-DesktopRefresh -DelayMs 3000
 }
 
+function Invoke-DesktopSereniteaCollect {
+    <# 点「刚取完」：把此刻记成新一轮的开始，顺手排 80 小时后的存满提醒 #>
+    try {
+        $state = Set-SereniteaCollected
+        Update-DesktopSerenitea
+        if ($state.ReminderScheduled) {
+            Show-DesktopToast -Text ('记下了，从现在开始攒。{0} 后（{1:MM-dd HH:mm}）存满，到时会提醒你。' -f (Get-SereniteaDurationText -Span $state.TimeToFull), $state.FullAt) -Kind 'ok'
+        }
+        else {
+            Show-DesktopToast -Text ('记下了，从现在开始攒。不过存满提醒没排上：{0}' -f $state.ReminderError) -Kind 'fail'
+        }
+        Write-ReminderLog ('桌面程序：尘歌壶记了一笔取宝钱，下次存满提醒 ' + $state.FullAt.ToString('s'))
+    }
+    catch {
+        Show-DesktopToast -Text ('记录取宝钱失败：{0}' -f $_.Exception.Message) -Kind 'fail'
+    }
+}
+
 function Invoke-DesktopSnooze {
     <# 点「10 分钟后再提醒」 #>
     $minutes = 10
@@ -1461,6 +1525,12 @@ function New-DesktopWindow {
         Open-DesktopBackfill
     })
 
+    # ---- 尘歌壶 · 洞天宝钱：记一笔「刚取完」 ----
+    $window.FindName('SereniteaCollectButton').Add_Click({
+        param($sender, $eventArgs)
+        Invoke-DesktopSereniteaCollect
+    })
+
     # ---- 庆祝层 ----
     $window.FindName('CelebrationAcceptButton').Add_Click({
         param($sender, $eventArgs)
@@ -1528,10 +1598,12 @@ function New-DesktopWindow {
     $window.Add_Loaded({
         param($sender, $eventArgs)
         Update-DesktopProgressBar
+        Update-DesktopSerenitea
     })
     $window.Add_SizeChanged({
         param($sender, $eventArgs)
         Update-DesktopProgressBar
+        Update-DesktopSerenitea
     })
 
     # ---- 顶栏时间 ----
@@ -1541,11 +1613,13 @@ function New-DesktopWindow {
     $script:clockTimer.Add_Tick({
         param($sender, $eventArgs)
         Update-DesktopClock
+        Update-DesktopSerenitea
     })
     $script:clockTimer.Start()
 
     # ---- 首屏 ----
     Update-DesktopToday
+    Update-DesktopSerenitea
     Set-DesktopPanel -Name 'today'
 
     # ---- 关窗时收尾：停掉定时器并记一笔日志 ----
