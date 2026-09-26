@@ -43,14 +43,14 @@ git -C "C:\Users\StarRiver\Desktop\code\StaRcl0ud3" push origin main
 
 ## 数据文件：绝对不要提交、不要覆盖
 
-`history.json`（打卡记录）、`watch.json`（看门设置）都在 .gitignore 里；
+`history.json`（打卡记录）、`watch.json`（看门设置）、`serenitea.json`（尘歌壶取宝钱时间）都在 .gitignore 里；
 合并时不要用 `git checkout --` 之类命令覆盖工作区的用户数据。
-自检脚本（`build\test-rewards.ps1`）会在跑前跑后比对 `history.json` 的 SHA256。
+自检脚本（`build\test-rewards.ps1`、`build\test-serenitea.ps1`）会在跑前跑后比对真实数据文件的 SHA256。
 
 ## 改完之前必须做
 
-- `build\test-rewards.ps1`（奖励数学 + 补录，50 项）和 `build\test-watch.ps1`（看门进程，18 项）全绿，
-  两个都要传 `-ProjectRoot`
+- `build\test-rewards.ps1`（奖励数学 + 补录，50 项）、`build\test-watch.ps1`（看门进程，18 项）、
+  `build\test-serenitea.ps1`（尘歌壶宝钱，41 项）全绿，都要传 `-ProjectRoot`
 - 颜色改动跑 `build\check-contrast.ps1`
 - 合并后确认用户目录里确实是新版本（对比 exe 哈希 / 看关键几行）
 - **功能/入口/数据结构有变动时，顺手更新 `项目现状.md`**（它是下一个对话的交接说明，别让它过时）

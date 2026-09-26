@@ -22,6 +22,9 @@
   免得玩完刚关游戏又被恭喜一次）。
 .PARAMETER ForceCongrats
   不看打卡数据、也不写打卡数据，直接弹一次「恭喜完成」窗口（预览用）。
+.PARAMETER SereniteaFull
+  尘歌壶存满提醒：弹「洞天宝钱已存满」的小窗口（原神宝钱 30/小时、2400 封顶，
+  取完宝钱时自动排的一次性计划任务到点会带这个参数跑）。
 .PARAMETER SnoozeMinutes
   点“稍后提醒”后等待的分钟数，默认 10 分钟。
 .PARAMETER DelaySeconds
@@ -43,6 +46,7 @@ param(
     [switch]$NoRun,
     [switch]$SkipWhenDone,
     [switch]$ForceCongrats,
+    [switch]$SereniteaFull,
     [int]$SnoozeMinutes = 10,
     [int]$DelaySeconds = 0
 )
@@ -176,6 +180,112 @@ function Set-ReminderCongratsHeader {
 
     $subtitle = $Window.FindName('HeaderSubtitleText')
     if ($subtitle) { $subtitle.Text = '原神 · 星穹铁道 · 绝区零 三款都完成了，奖励已经入账。' }
+}
+
+function Set-ReminderSereniteaLine {
+    <#
+    23:30 弹窗底部那行尘歌壶状态（原神洞天宝钱，纯提示，不写打卡记录）：
+    没记录过就整行收起来；存满了换成金色催一句。
+    #>
+    param($Window)
+
+    $text = $Window.FindName('SereniteaText')
+    if (-not $text) { return }
+
+    try {
+        $record = Read-SereniteaData
+        $state = Get-SereniteaState -Record $record
+    }
+    catch {
+        $text.Visibility = 'Collapsed'
+        return
+    }
+
+    if (-not $state.HasRecord) {
+        $text.Visibility = 'Collapsed'
+        return
+    }
+
+    if ($state.IsFull) {
+        $text.Text = '壶里的洞天宝钱已经存满 2400 枚，记得去取一下'
+        $text.Foreground = New-UiBrush '#FFFFD98A'
+    }
+    else {
+        $text.Text = '尘歌壶宝钱 {0} / 2400 · {1} 后存满' -f $state.Coins, (Get-SereniteaDurationText -Span $state.TimeToFull)
+        $text.Foreground = New-UiBrush '#FFB7C2DE'
+    }
+    $text.Visibility = 'Visible'
+}
+
+function Show-SereniteaFullDialog {
+    <#
+    尘歌壶存满提醒的小窗口（serenitea.xaml）。
+    正常情况是「已存满」；如果到点时用户其实已经又取过一轮（任务补跑、时钟对不上），
+    就照实显示现在的进度，按钮照常可用。
+    「刚取完了」会把此刻记成新的一轮开始，并自动排下一个 80 小时后的提醒。
+    #>
+    Add-Type -AssemblyName PresentationFramework
+    Add-Type -AssemblyName PresentationCore
+    Add-Type -AssemblyName WindowsBase
+
+    $xamlPath = Join-Path $PSScriptRoot 'serenitea.xaml'
+    if (-not (Test-Path -LiteralPath $xamlPath)) {
+        throw "找不到尘歌壶提醒界面文件：$xamlPath"
+    }
+    $xaml = [System.IO.File]::ReadAllText($xamlPath, [System.Text.Encoding]::UTF8)
+    $window = [System.Windows.Markup.XamlReader]::Parse($xaml)
+    Set-ReminderWindowIcon -Window $window
+
+    $record = Read-SereniteaData
+    $state = Get-SereniteaState -Record $record
+
+    $titleText = $window.FindName('FullTitleText')
+    $subtitleText = $window.FindName('FullSubtitleText')
+    $statsText = $window.FindName('FullStatsText')
+
+    if ($state.HasRecord) {
+        $lastText = $state.LastCollected.ToString('MM-dd HH:mm')
+        if ($state.IsFull) {
+            $titleText.Text = '洞天宝钱已存满'
+            $subtitleText.Text = '2400 枚攒满了，去尘歌壶找阿圆取一下吧。取完点下面的按钮，我帮你盯着下一轮。'
+            $statsText.Text = '现在 2400 / 2400 · 上次取完 {0}（已攒 {1}）' -f $lastText, (Get-SereniteaDurationText -Span ($state.FullAt - $state.LastCollected))
+        }
+        else {
+            $titleText.Text = '洞天宝钱还没满'
+            $subtitleText.Text = '这趟提醒来早了（可能刚开机补跑）。现在的进度给你放这儿，满了下次再叫你。'
+            $statsText.Text = '现在 {0} / {1} · 还剩 {2}（{3:MM-dd HH:mm} 满）' -f $state.Coins, $state.Cap, (Get-SereniteaDurationText -Span $state.TimeToFull), $state.FullAt
+        }
+    }
+    else {
+        $titleText.Text = '还没有宝钱记录'
+        $subtitleText.Text = '在桌面程序里点一次「刚取完」，这里就会开始帮你数。'
+        $statsText.Text = ''
+    }
+
+    Enable-ReminderWindow -Window $window
+    Enable-ReminderSoftTopmost -Window $window
+
+    $window.FindName('CloseButton').Add_Click({ $window.Close() })
+    $window.FindName('OKButton').Add_Click({ $window.Close() })
+    $window.FindName('CollectButton').Add_Click({
+        try {
+            $newState = Set-SereniteaCollected
+            Write-ReminderLog ('尘歌壶：存满提醒里点了「刚取完了」，新一轮开始，下次提醒排在 ' + $newState.FullAt.ToString('s'))
+        }
+        catch {
+            Write-ReminderLog ('尘歌壶：记录取宝钱失败：' + $_.Exception.Message)
+        }
+        $window.Close()
+    })
+    $window.Add_PreviewKeyDown({
+        param($sender, $eventArgs)
+        if ($eventArgs.Key -eq [System.Windows.Input.Key]::Escape) {
+            $window.Close()
+            $eventArgs.Handled = $true
+        }
+    })
+
+    $null = $window.ShowDialog()
 }
 
 function Hide-ReminderCelebration {
@@ -314,6 +424,7 @@ function Show-ReminderDialog {
     }
 
     Update-ReminderStreakLabel -Window $window
+    Set-ReminderSereniteaLine -Window $window
 
     Enable-ReminderWindow -Window $window
     Enable-ReminderSoftTopmost -Window $window
@@ -579,6 +690,18 @@ function Invoke-DailyReminder {
         $marked = @(Get-ReminderDayGames -Data $data -Date $todayKey)
         Write-Output ('{0} {1}' -f $todayKey, $(if ($complete) { 'complete' } else { 'incomplete' }))
         Write-Output ('已标记：{0}' -f $(if ($marked.Count -gt 0) { $marked -join '、' } else { '（无）' }))
+        return
+    }
+
+    if ($SereniteaFull) {
+        # 尘歌壶存满提醒：和每日打卡无关，弹完就退，不走下面的打卡流程
+        Write-ReminderLog '尘歌壶：存满提醒触发，弹洞天宝钱窗口'
+        try {
+            $null = Show-SereniteaFullDialog
+        }
+        catch {
+            Write-ReminderLog ('尘歌壶：提醒窗口显示失败：' + $_.Exception.Message + ' | ' + $_.InvocationInfo.PositionMessage)
+        }
         return
     }
 

@@ -1,0 +1,225 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="尘歌壶 · 洞天宝钱"
+        Width="440"
+        SizeToContent="Height"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen"
+        ShowInTaskbar="False"
+        FontFamily="Microsoft YaHei UI"
+        TextOptions.TextFormattingMode="Display"
+        UseLayoutRounding="True">
+
+    <Window.Resources>
+        <Style x:Key="GhostButton" TargetType="{x:Type Button}">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#FFB7C2DE"/>
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Grid>
+                            <Border x:Name="Bd"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="8"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"/>
+                            </Border>
+                            <Border x:Name="FocusRing" CornerRadius="8" BorderThickness="2"
+                                    BorderBrush="Transparent" IsHitTestVisible="False"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#1CFFFFFF"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#30FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="FocusRing" Property="BorderBrush" Value="#FFFFD98A"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="CloseButton" TargetType="{x:Type Button}">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#FFA9B4D4"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Grid>
+                            <Border x:Name="Bd"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="9">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"/>
+                            </Border>
+                            <Border x:Name="FocusRing" CornerRadius="9" BorderThickness="2"
+                                    BorderBrush="Transparent" IsHitTestVisible="False"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#26FFFFFF"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="FocusRing" Property="BorderBrush" Value="#FFFFD98A"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PrimaryButton" TargetType="{x:Type Button}">
+            <Setter Property="Background" Value="#FFF2C463"/>
+            <Setter Property="Foreground" Value="#FF1A202E"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <Grid>
+                            <Border x:Name="Bd"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="12">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"/>
+                            </Border>
+                            <Border x:Name="FocusRing" CornerRadius="12" BorderThickness="2"
+                                    BorderBrush="Transparent" IsHitTestVisible="False"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Opacity" Value="0.9"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Opacity" Value="0.72"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="FocusRing" Property="BorderBrush" Value="#FF3A2600"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Border Margin="18"
+            CornerRadius="22"
+            BorderThickness="1"
+            BorderBrush="#30FFFFFF">
+        <Border.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#FF343B5F" Offset="0"/>
+                <GradientStop Color="#FF1C2034" Offset="1"/>
+            </LinearGradientBrush>
+        </Border.Background>
+
+        <Grid Margin="26,22,26,22">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- 头部：小标签 + 关闭 -->
+            <Grid Grid.Row="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Border Background="#26F3C766"
+                        CornerRadius="6"
+                        Padding="9,4"
+                        HorizontalAlignment="Left">
+                    <TextBlock Text="原神 · 尘歌壶"
+                               FontSize="10.5"
+                               Foreground="#FFFFDE9E"/>
+                </Border>
+                <Button x:Name="CloseButton"
+                        Grid.Column="1"
+                        Width="34"
+                        Height="34"
+                        Style="{StaticResource CloseButton}"
+                        Content="✕"
+                        VerticalAlignment="Top"/>
+            </Grid>
+
+            <!-- 正文：图标 + 状态 -->
+            <StackPanel Grid.Row="1" Margin="0,16,0,0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Border Width="56"
+                            Height="56"
+                            CornerRadius="28"
+                            Background="#2EF2C463"
+                            BorderBrush="#80FFD98A"
+                            BorderThickness="1">
+                        <TextBlock Text="壶"
+                                   FontSize="24"
+                                   FontWeight="SemiBold"
+                                   Foreground="#FFFFE3A4"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="FullTitleText"
+                                   Text="洞天宝钱已存满"
+                                   FontSize="19"
+                                   FontWeight="Bold"
+                                   Foreground="White"/>
+                        <TextBlock x:Name="FullSubtitleText"
+                                   Text="2400 枚攒满了，去尘歌壶找阿圆取一下吧。"
+                                   Margin="0,5,0,0"
+                                   FontSize="12"
+                                   TextWrapping="Wrap"
+                                   Foreground="#FFB7C2DE"/>
+                    </StackPanel>
+                </Grid>
+                <TextBlock x:Name="FullStatsText"
+                           Margin="0,14,0,0"
+                           FontSize="11.5"
+                           Foreground="#FFFFD98A"
+                           TextWrapping="Wrap"
+                           Text="现在 0 / 2400"/>
+            </StackPanel>
+
+            <!-- 按钮：主按钮是「刚取完了」（把下一轮的开始时间记下来），旁边的只是关掉 -->
+            <StackPanel Grid.Row="2" Margin="0,18,0,0">
+                <Button x:Name="CollectButton"
+                        Height="46"
+                        IsDefault="True"
+                        Style="{StaticResource PrimaryButton}"
+                        Content="刚取完了，重新开始攒"/>
+                <Button x:Name="OKButton"
+                        Height="34"
+                        Margin="0,9,0,0"
+                        HorizontalAlignment="Center"
+                        Style="{StaticResource GhostButton}"
+                        Content="知道了，等下再去取"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

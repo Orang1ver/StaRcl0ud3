@@ -136,12 +136,13 @@
         </Border.Background>
 
         <Grid>
-            <Grid Margin="26,22,26,22">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
+                <Grid Margin="26,22,26,22">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
     
                 <!-- 头部（恭喜模式下 Set-ReminderCongratsHeader 会改这三行字） -->
                 <Grid Grid.Row="0">
@@ -369,9 +370,19 @@
                         </Grid>
                     </Border>
                 </StackPanel>
-    
+
+                <!-- 尘歌壶 · 洞天宝钱（原神，纯提示不计奖励；没记录过时整行收起来） -->
+                <TextBlock x:Name="SereniteaText"
+                           Grid.Row="2"
+                           Margin="0,10,0,0"
+                           HorizontalAlignment="Center"
+                           FontSize="11.5"
+                           Foreground="#FFB7C2DE"
+                           Visibility="Collapsed"
+                           Text="尘歌壶宝钱 0 / 2400"/>
+
                 <!-- 底部按钮 -->
-                <StackPanel Grid.Row="2" Margin="0,10,0,0">
+                <StackPanel Grid.Row="3" Margin="0,10,0,0">
                     <Button x:Name="LaunchButton"
                             Height="46"
                             IsDefault="True"

@@ -19,4 +19,6 @@ sea-prep.blob
 history.json
 # 看门设置（游戏退出后怎么提醒，本机偏好）
 watch.json
+# 尘歌壶宝钱记录（上次取完的时间，本机数据）
+serenitea.json
 xxmi-path.txt

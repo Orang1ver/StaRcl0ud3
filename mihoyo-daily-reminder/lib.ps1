@@ -2051,3 +2051,281 @@ function Start-ReminderWatcher {
         return $null
     }
 }
+
+# ============================================================
+#  尘歌壶 · 洞天宝钱（原神，纯提醒，不计入奖励系统）
+#  ------------------------------------------------------------
+#  只记一件事：上次「把宝钱取完」的时间。现在的币数、什么时候存满
+#  全部由它推导（30 枚/小时，2400 封顶 = 80 小时），和奖励引擎
+#  「记录是唯一真相」的思路一致。数据放 serenitea.json，不进仓库。
+# ============================================================
+
+function Get-SereniteaCap {
+    <# 宝钱存满上限（枚） #>
+    return 2400
+}
+
+function Get-SereniteaHoursToFull {
+    <# 从取完到存满需要的小时数（2400 / 30 = 80） #>
+    return (Get-SereniteaCap) / 30.0
+}
+
+function Get-SereniteaDataPaths {
+    $paths = New-Object System.Collections.Generic.List[string]
+    if ($PSScriptRoot) {
+        $paths.Add((Join-Path $PSScriptRoot 'serenitea.json'))
+    }
+    $paths.Add((Join-Path (Join-Path $env:APPDATA 'MiHoYoDailyReminder') 'serenitea.json'))
+    return $paths
+}
+
+function Read-SereniteaData {
+    <# 读取尘歌壶记录。没有记录时 LastCollected 是 $null，Path 指向该写的位置。 #>
+    param([string[]]$Paths)
+
+    if (-not $Paths) { $Paths = Get-SereniteaDataPaths }
+
+    $result = [pscustomobject]@{
+        LastCollected = $null
+        Path          = $null
+    }
+
+    foreach ($p in $Paths) {
+        if (-not (Test-Path -LiteralPath $p)) { continue }
+        try {
+            $raw = [System.IO.File]::ReadAllText($p, [System.Text.Encoding]::UTF8)
+            if ([string]::IsNullOrWhiteSpace($raw)) { continue }
+            $json = ConvertFrom-Json -InputObject $raw
+            if ($json -and $json.PSObject.Properties['lastCollected'] -and $json.lastCollected) {
+                try { $result.LastCollected = [datetime]$json.lastCollected } catch { $result.LastCollected = $null }
+            }
+            $result.Path = $p
+            return $result
+        }
+        catch {
+            Write-ReminderLog ('读取尘歌壶记录失败（' + $p + '）：' + $_.Exception.Message)
+        }
+    }
+
+    # 哪个文件都没读到：回退到调用方给的第一候选（没给就是默认位置）
+    $fallback = $null
+    if ($Paths -and @($Paths).Count -gt 0) { $fallback = @($Paths)[0] }
+    if (-not $fallback) { $fallback = (Get-SereniteaDataPaths)[0] }
+    $result.Path = $fallback
+    return $result
+}
+
+function Save-SereniteaData {
+    param($Data)
+
+    if (-not $Data) { return $null }
+
+    # 和打卡数据同一个安全阀：没有 Path 的数据不落盘（大概率是测试造的假数据）
+    if (-not $Data.PSObject.Properties['Path'] -or [string]::IsNullOrWhiteSpace([string]$Data.Path)) {
+        Write-ReminderLog '拒绝保存尘歌壶记录：没有指定文件路径。'
+        return $null
+    }
+
+    $lastCollected = $null
+    if ($Data.LastCollected) { $lastCollected = ([datetime]$Data.LastCollected).ToString('s') }
+
+    $json = [pscustomobject]@{
+        _note         = '尘歌壶洞天宝钱：上次「取完宝钱」的时间。产出 30 枚/小时，2400 封顶（80 小时存满）。'
+        version       = 1
+        lastCollected = $lastCollected
+        updated       = (Get-Date).ToString('s')
+    } | ConvertTo-Json
+
+    try {
+        $parent = Split-Path -Path $Data.Path -Parent
+        if ($parent -and -not (Test-Path -LiteralPath $parent)) {
+            $null = New-Item -ItemType Directory -Path $parent -Force
+        }
+        [System.IO.File]::WriteAllText($Data.Path, $json, [System.Text.UTF8Encoding]::new($false))
+        return $Data.Path
+    }
+    catch {
+        Write-ReminderLog ('保存尘歌壶记录失败：' + $_.Exception.Message)
+        return $null
+    }
+}
+
+function Get-SereniteaState {
+    <#
+    由「上次取完的时间」算出现在的宝钱状态（纯函数，不读盘）：
+      Coins      现在有多少枚（每 2 分钟 1 枚，存满封顶）
+      IsFull     存满了没有
+      FullAt     预计存满的时刻（上次取完 + 80 小时）
+      TimeToFull 离存满还剩多久（已满时为 0）
+      Progress   0 ~ 1，给进度条用
+    #>
+    param($Record, [datetime]$Now = (Get-Date))
+
+    $cap = Get-SereniteaCap
+    $hoursToFull = Get-SereniteaHoursToFull
+
+    $last = $null
+    if ($Record -and $Record.PSObject.Properties['LastCollected'] -and $Record.LastCollected) {
+        $last = [datetime]$Record.LastCollected
+    }
+
+    if (-not $last) {
+        return [pscustomobject]@{
+            HasRecord     = $false
+            LastCollected = $null
+            Coins         = 0
+            Cap           = $cap
+            Remaining     = $cap
+            IsFull        = $false
+            FullAt        = $null
+            TimeToFull    = $null
+            Progress      = 0.0
+        }
+    }
+
+    $elapsed = $Now - $last
+    if ($elapsed.TotalMilliseconds -lt 0) { $elapsed = [TimeSpan]::Zero }
+
+    $coins = [int][Math]::Floor($elapsed.TotalHours * 30.0)
+    if ($coins -gt $cap) { $coins = $cap }
+    if ($coins -lt 0) { $coins = 0 }
+
+    $isFull = ($coins -ge $cap)
+    $fullAt = $last.AddHours($hoursToFull)
+    $timeToFull = [TimeSpan]::Zero
+    if (-not $isFull) {
+        $timeToFull = $fullAt - $Now
+        if ($timeToFull.TotalMilliseconds -lt 0) { $timeToFull = [TimeSpan]::Zero }
+    }
+
+    return [pscustomobject]@{
+        HasRecord     = $true
+        LastCollected = $last
+        Coins         = $coins
+        Cap           = $cap
+        Remaining     = ($cap - $coins)
+        IsFull        = $isFull
+        FullAt        = $fullAt
+        TimeToFull    = $timeToFull
+        Progress      = [Math]::Min(1.0, $coins / [double]$cap)
+    }
+}
+
+function Get-SereniteaDurationText {
+    <# 把剩余时间写成「X 天 Y 小时 / X 小时 Y 分钟 / Y 分钟」 #>
+    param([TimeSpan]$Span)
+
+    if ($Span.TotalMilliseconds -lt 0) { $Span = [TimeSpan]::Zero }
+
+    $totalMinutes = [int][Math]::Floor($Span.TotalMinutes)
+    $days = [int][Math]::Floor($totalMinutes / 1440)
+    $hours = [int][Math]::Floor(($totalMinutes % 1440) / 60)
+    $minutes = $totalMinutes % 60
+
+    if ($days -gt 0) { return '{0} 天 {1} 小时' -f $days, $hours }
+    if ($hours -gt 0) { return '{0} 小时 {1} 分钟' -f $hours, $minutes }
+    return '{0} 分钟' -f $minutes
+}
+
+function Set-SereniteaCollected {
+    <#
+    记一笔「刚把宝钱取完了」，默认顺手把存满提醒的一次性计划任务排上。
+    测试传 -NoReminder 和 -Paths，别碰真实记录和系统任务。
+    #>
+    param(
+        [datetime]$At = (Get-Date),
+        [string[]]$Paths,
+        [switch]$NoReminder
+    )
+
+    $record = Read-SereniteaData -Paths $Paths
+    $record.LastCollected = $At
+    $null = Save-SereniteaData -Data $record
+    Write-ReminderLog ('尘歌壶：记录取完宝钱的时间 ' + $At.ToString('s'))
+
+    $state = Get-SereniteaState -Record $record -Now $At
+    $state | Add-Member -NotePropertyName ReminderScheduled -NotePropertyValue $false -Force
+    $state | Add-Member -NotePropertyName ReminderError -NotePropertyValue $null -Force
+
+    if (-not $NoReminder) {
+        try {
+            $null = Register-SereniteaReminder -FullAt $state.FullAt
+            $state.ReminderScheduled = $true
+        }
+        catch {
+            $state.ReminderError = $_.Exception.Message
+            Write-ReminderLog ('排存满提醒失败：' + $_.Exception.Message)
+        }
+    }
+
+    return $state
+}
+
+function Get-SereniteaTaskName {
+    <# 存满提醒的计划任务名（一次性任务，取完宝钱时自动重排） #>
+    return 'MiHoYo Serenitea Reminder'
+}
+
+function Register-SereniteaReminder {
+    <#
+    存满提醒：注册一个一次性计划任务，到存满时刻跑 daily-reminder.ps1 -SereniteaFull。
+    每次点「刚取完」都会 -Force 重排；触发器带 EndBoundary（满时 + 2 小时），
+    配合 DeleteExpiredTaskAfter 让任务自己清掉，不在系统里留垃圾。
+    #>
+    param(
+        [datetime]$FullAt,
+        [string]$TaskName = (Get-SereniteaTaskName)
+    )
+
+    if (-not $FullAt) { throw '没有存满时间，没法排提醒。' }
+    if ($FullAt -le (Get-Date)) { throw '存满时间已经过了，不用排提醒。' }
+
+    # 计划任务优先直接调用宿主 exe（和 23:30 的提醒同一个宿主，-SereniteaFull 会透传给脚本）
+    $hostExe = Get-ReminderHostPath
+    if ($hostExe) {
+        $action = New-ScheduledTaskAction -Execute $hostExe -Argument '--reminder -SereniteaFull' -WorkingDirectory $PSScriptRoot
+    }
+    else {
+        $windowsPowerShell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+        $scriptPath = Join-Path $PSScriptRoot 'daily-reminder.ps1'
+        $action = New-ScheduledTaskAction `
+            -Execute $windowsPowerShell `
+            -Argument "-NoProfile -WindowStyle Hidden -STA -ExecutionPolicy Bypass -File `"$scriptPath`" -SereniteaFull"
+    }
+
+    $trigger = New-ScheduledTaskTrigger -Once -At $FullAt
+    $trigger.EndBoundary = $FullAt.AddHours(2).ToString('yyyy-MM-ddTHH:mm:ss')
+
+    $settings = New-ScheduledTaskSettingsSet `
+        -StartWhenAvailable `
+        -ExecutionTimeLimit (New-TimeSpan -Hours 1) `
+        -MultipleInstances IgnoreNew `
+        -DeleteExpiredTaskAfter (New-TimeSpan -Minutes 10)
+
+    $principal = New-ScheduledTaskPrincipal `
+        -UserId "$env:USERDOMAIN\$env:USERNAME" `
+        -LogonType Interactive
+
+    Register-ScheduledTask `
+        -TaskName $TaskName `
+        -Action $action `
+        -Trigger $trigger `
+        -Settings $settings `
+        -Principal $principal `
+        -Description '尘歌壶洞天宝钱存满提醒（取完宝钱时自动排的一次性任务，取完会自动重排下一次）。' `
+        -Force | Out-Null
+
+    return (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue)
+}
+
+function Remove-SereniteaReminder {
+    <# 不想要提醒时手动清掉（正常流程里任务跑完会自己删） #>
+    param([string]$TaskName = (Get-SereniteaTaskName))
+
+    $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if ($task) {
+        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+        return $true
+    }
+    return $false
+}

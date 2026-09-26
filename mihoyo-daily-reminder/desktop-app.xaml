@@ -440,6 +440,45 @@
                                                 VerticalAlignment="Center"/>
                                     </Grid>
                                 </Border>
+
+                                <!-- 尘歌壶 · 洞天宝钱（原神，纯提醒不计奖励） -->
+                                <Border x:Name="SereniteaCard" Height="108" Margin="0,14,0,0" CornerRadius="16"
+                                        Background="#1FFFFFFF" BorderThickness="1" BorderBrush="#1FFFFFFF"
+                                        Padding="16,0" ToolTipService.InitialShowDelay="200">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Border x:Name="SereniteaIcon" Width="48" Height="48" CornerRadius="24"
+                                                Background="#2EF2C463" BorderBrush="#59F2C463" BorderThickness="1"
+                                                VerticalAlignment="Center">
+                                            <TextBlock x:Name="SereniteaIconText" Text="壶" FontSize="19"
+                                                       FontWeight="SemiBold" Foreground="#FFFFE3A4"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <StackPanel Grid.Column="1" Margin="14,0,12,0" VerticalAlignment="Center">
+                                            <Grid>
+                                                <TextBlock x:Name="SereniteaName" Text="尘歌壶 · 洞天宝钱（原神）" FontSize="15.5"
+                                                           FontWeight="SemiBold" Foreground="White"/>
+                                                <TextBlock x:Name="SereniteaCoins" Text="" FontSize="15"
+                                                           FontWeight="SemiBold" Foreground="#FFFFDE9E"
+                                                           HorizontalAlignment="Right" Typography.NumeralAlignment="Tabular"/>
+                                            </Grid>
+                                            <TextBlock x:Name="SereniteaStatus" Text="取完宝钱点「刚取完」，这里开始帮你数"
+                                                       Margin="0,4,0,0" FontSize="11.5" Foreground="#FFB7C2DE"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <Border Height="5" CornerRadius="2.5" Background="#1FFFFFFF" Margin="0,9,0,0">
+                                                <Border x:Name="SereniteaBar" HorizontalAlignment="Left" CornerRadius="2.5"
+                                                        Background="#FFE9B94C" Width="0"/>
+                                            </Border>
+                                        </StackPanel>
+                                        <Button x:Name="SereniteaCollectButton" Grid.Column="2" Width="92" Height="34"
+                                                Style="{StaticResource OutlineButton}" Content="刚取完"
+                                                VerticalAlignment="Center"/>
+                                    </Grid>
+                                </Border>
                             </StackPanel>
                         </ScrollViewer>
 
