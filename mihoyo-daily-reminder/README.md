@@ -38,6 +38,15 @@ exe 是**独立宿主**：它把 Windows 自带的 PowerShell 引擎**装进自�
 
 ## 桌面程序
 
+### Windows SmartScreen 反复拦截 EXE 时
+
+在项目目录创建一个空文件 `.use-script-host`，然后通过 `desktop-app.cmd` 打开，
+在设置页重新创建快捷方式；已有提醒计划任务在设置页保存原提醒时间即可切换入口。
+本机选择会让桌面、提醒和看门统一使用 Windows 自带的 PowerShell 脚本入口，
+界面、图标、打卡数据相同，任务管理器中显示 `powershell.exe`。
+标记文件不提交到 Git，直接双击 EXE 仍可能显示 SmartScreen；无需修改 Windows 安全设置。
+删除标记、重新创建快捷方式并保存提醒时间可恢复默认 EXE 模式。
+
 窗口 980×680，无边框深色卡片风格，左边是导航，右边是内容：
 
 - **今日委托**

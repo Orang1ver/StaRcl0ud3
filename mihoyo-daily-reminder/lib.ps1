@@ -1942,9 +1942,9 @@ function Save-ReminderWatchSettings {
 }
 
 function Get-ReminderAppPath {
-    <# 桌面程序入口：优先用打包好的 exe，没有就用 cmd #>
-    $exe = Join-Path $PSScriptRoot '米哈游每日助手.exe'
-    if (Test-Path -LiteralPath $exe) { return $exe }
+    <# 桌面程序入口：遵循本机启动方式，没有宿主就用 cmd #>
+    $exe = Get-ReminderHostPath
+    if ($exe) { return $exe }
     $cmd = Join-Path $PSScriptRoot 'desktop-app.cmd'
     if (Test-Path -LiteralPath $cmd) { return $cmd }
     return $null
@@ -1952,6 +1952,8 @@ function Get-ReminderAppPath {
 
 function Get-ReminderHostPath {
     <# 独立宿主 exe：它把 PowerShell 引擎装在自己进程里跑脚本，所以不会有 powershell.exe 冒出来 #>
+    # 未签名 EXE 被 SmartScreen 反复拦截时，可只在本机选择已有的脚本入口。
+    if (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.use-script-host') -PathType Leaf) { return $null }
     $exe = Join-Path $PSScriptRoot '米哈游每日助手.exe'
     if (Test-Path -LiteralPath $exe) { return $exe }
     return $null
@@ -1961,7 +1963,7 @@ function Start-ReminderHostProcess {
     <#
     起一个独立进程跑某个脚本。
       优先：米哈游每日助手.exe --reminder / --watch / --desktop / --script <名字>
-      退路：exe 不在时（比如只拷了脚本）才回退到 powershell.exe -File
+      退路：本机选择脚本模式或 exe 不在时，使用 powershell.exe -File
     #>
     param(
         [ValidateSet('desktop', 'reminder', 'watch', 'script')][string]$Kind = 'reminder',

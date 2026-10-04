@@ -1250,10 +1250,10 @@ function Open-DesktopDataFolder {
 }
 
 function Register-DesktopShortcut {
-    <# 在桌面和开始菜单各放一个快捷方式：优先指向带图标的 exe，没有 exe 就用 powershell 跑脚本 #>
+    <# 在桌面和开始菜单各放一个快捷方式：遵循本机启动方式，图标仍使用程序图标 #>
     $windowPowerShell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $appScript = Join-Path $PSScriptRoot 'desktop-app.ps1'
-    $appExe = Join-Path $PSScriptRoot '米哈游每日助手.exe'
+    $appExe = Get-ReminderHostPath
     $iconPath = Join-Path $PSScriptRoot 'assets\app.ico'
 
     $targets = New-Object System.Collections.Generic.List[string]
@@ -1266,7 +1266,7 @@ function Register-DesktopShortcut {
     foreach ($file in $targets) {
         try {
             $shortcut = $shell.CreateShortcut($file)
-            if (Test-Path -LiteralPath $appExe) {
+            if ($appExe) {
                 $shortcut.TargetPath = $appExe
                 $shortcut.Arguments = ''
             }
@@ -1275,7 +1275,7 @@ function Register-DesktopShortcut {
                 $shortcut.Arguments = ('-NoProfile -WindowStyle Hidden -STA -ExecutionPolicy Bypass -File "{0}"' -f $appScript)
             }
             $shortcut.WorkingDirectory = $PSScriptRoot
-            if (Test-Path -LiteralPath $appExe) {
+            if ($appExe) {
                 # 图标直接从快捷方式目标读取，避免独立 app.ico 路径或 Explorer 缓存失效。
                 $shortcut.IconLocation = ('{0},0' -f $appExe)
             }
