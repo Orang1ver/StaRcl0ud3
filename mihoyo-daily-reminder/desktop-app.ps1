@@ -1275,7 +1275,11 @@ function Register-DesktopShortcut {
                 $shortcut.Arguments = ('-NoProfile -WindowStyle Hidden -STA -ExecutionPolicy Bypass -File "{0}"' -f $appScript)
             }
             $shortcut.WorkingDirectory = $PSScriptRoot
-            if (Test-Path -LiteralPath $iconPath) {
+            if (Test-Path -LiteralPath $appExe) {
+                # 图标直接从快捷方式目标读取，避免独立 app.ico 路径或 Explorer 缓存失效。
+                $shortcut.IconLocation = ('{0},0' -f $appExe)
+            }
+            elseif (Test-Path -LiteralPath $iconPath) {
                 $shortcut.IconLocation = $iconPath
             }
             else {
