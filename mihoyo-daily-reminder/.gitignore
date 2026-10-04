@@ -1,0 +1,2 @@
+# 本机启动方式：存在时使用 Windows PowerShell 脚本入口，避免 EXE 信誉拦截。
+.use-script-host
